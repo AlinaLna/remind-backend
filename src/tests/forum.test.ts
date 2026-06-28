@@ -75,7 +75,9 @@ describe('Forum guest browse & search', () => {
       status: 'hidden',
     });
 
-    const res = await request(app).get(`/api/forums/${forum._id.toString()}/posts`);
+    const res = await request(app)
+      .get('/api/forums/posts')
+      .query({ forumId: forum._id.toString() });
 
     expect(res.status).toBe(200);
     expect(res.body.posts).toHaveLength(1);
@@ -183,8 +185,8 @@ describe('Forum signed-in posting', () => {
     });
 
     const res = await request(app)
-      .post(`/api/forums/${forum._id.toString()}/posts`)
-      .send({ title: 'Hello', content: 'World', authorDisplayMode: 0 });
+      .post('/api/forums/posts')
+      .send({ title: 'Hello', content: 'World', authorDisplayMode: 0, forumId: forum._id.toString() });
 
     expect(res.status).toBe(401);
   });
@@ -206,13 +208,14 @@ describe('Forum signed-in posting', () => {
     const token = signToken(user._id.toString(), user.role);
 
     const res = await request(app)
-      .post(`/api/forums/${forum._id.toString()}/posts`)
+      .post('/api/forums/posts')
       .set('Authorization', `Bearer ${token}`)
       .send({
         title: 'Need advice',
         content: 'Any tips?',
         tags: ['study'],
         authorDisplayMode: 0,
+        forumId: forum._id.toString(),
       });
 
     expect(res.status).toBe(201);

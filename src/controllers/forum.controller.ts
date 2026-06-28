@@ -21,6 +21,7 @@ interface CreatePostBody {
   content?: unknown;
   tags?: unknown;
   authorDisplayMode?: unknown;
+  forumId?: unknown;
 }
 
 interface CreateCommentBody {
@@ -98,10 +99,10 @@ export const listForums: RequestHandler = async (req, res) => {
 
 
 export const createPost: RequestHandler = async (req, res) => {
-  const { forumId } = req.params as unknown as ForumParams;
-  const { title, content, tags, authorDisplayMode } = (req.body || {}) as CreatePostBody;
+  const { title, content, tags, authorDisplayMode, forumId: bodyForumId } = (req.body || {}) as CreatePostBody;
   const displayMode = authorDisplayMode as AuthorDisplayMode;
   const userId = req.user && req.user.id;
+  const forumId = (req.params as any).forumId || bodyForumId || req.query.forumId;
 
   if (!isValidObjectId(userId)) {
     return res.status(401).json({ error: 'Invalid token' });
@@ -117,7 +118,7 @@ export const createPost: RequestHandler = async (req, res) => {
   }
 
   try {
-    let actualForumId = forumId;
+    let actualForumId = forumId as string | undefined;
     if (!actualForumId) {
       const firstForum = await Forum.findOne({ isActive: true }).lean();
       if (firstForum) {
@@ -426,7 +427,7 @@ export const deleteComment: RequestHandler = async (req, res) => {
 };
 
 export const listForumPosts: RequestHandler = async (req, res) => {
-  const { forumId } = req.params as unknown as ForumParams;
+  const forumId = ((req.params as any).forumId || req.query.forumId) as string | undefined;
 
   try {
     const limit = parseInt(req.query.limit as string) || 10;
