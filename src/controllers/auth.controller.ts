@@ -3,6 +3,7 @@ import bcrypt from 'bcryptjs';
 import { randomUUID } from 'crypto';
 import { createHash } from 'crypto';
 import jwt from 'jsonwebtoken';
+import { OAuth2Client } from 'google-auth-library';
 import mongoose from 'mongoose';
 import User from '../models/user.model';
 import type { AuthTokenPayload, UserRole, UserStatus } from '../types/common';
@@ -241,6 +242,74 @@ export const refresh: RequestHandler<{}, unknown, RefreshBody> = async (req, res
   } catch (error) {
     console.error('Refresh error:', error);
     return res.status(401).json({ error: 'Invalid refresh token' });
+  }
+};
+
+const getGoogleClient = (): OAuth2Client => {
+  const clientId = process.env.GOOGLE_CLIENT_ID;
+  if (!clientId) {
+    throw new Error('GOOGLE_CLIENT_ID not configured');
+  }
+  return new OAuth2Client(clientId);
+};
+
+interface GoogleLoginBody {
+  googleToken?: unknown;
+}
+
+export const googleLogin: RequestHandler<{}, unknown, GoogleLoginBody> = async (req, res) => {
+  try {
+    const googleToken = isString(req.body.googleToken) ? req.body.googleToken : '';
+    if (!googleToken) {
+      return res.status(400).json({ error: 'Google token is required' });
+    }
+
+    const client = getGoogleClient();
+    const ticket = await client.verifyIdToken({
+      idToken: googleToken,
+      audience: process.env.GOOGLE_CLIENT_ID,
+    });
+    const payload = ticket.getPayload();
+    if (!payload || !payload.email) {
+      return res.status(400).json({ error: 'Invalid Google token' });
+    }
+
+    const email = payload.email.toLowerCase();
+    const fullName = payload.name?.trim() || email.split('@')[0];
+    const googleId = payload.sub;
+
+    let user = await User.findOne({ email });
+    if (user) {
+      if (user.status === 'banned' || user.status === 'rejected') {
+        return res.status(403).json({ error: 'Account is blocked' });
+      }
+      if (!user.googleId) {
+        user = await User.findByIdAndUpdate(user._id, { googleId }, { new: true }) as typeof user;
+      }
+    } else {
+      user = await User.create({
+        email,
+        fullName,
+        googleId,
+        role: 'student',
+        status: 'active',
+      });
+    }
+
+    const { accessToken, refreshToken } = await issueTokenPair(user);
+    await storeRefreshToken(user._id, refreshToken);
+
+    return res.status(200).json({
+      user: buildSafeUserDto(user),
+      accessToken,
+      refreshToken,
+    });
+  } catch (error) {
+    if (error instanceof Error && error.message === 'GOOGLE_CLIENT_ID not configured') {
+      return res.status(500).json({ error: 'Google login not configured' });
+    }
+    console.error('Google login error:', error);
+    return res.status(401).json({ error: 'Invalid Google token' });
   }
 };
 
