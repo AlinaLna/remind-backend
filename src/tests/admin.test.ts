@@ -249,6 +249,60 @@ describe('Admin API security & behavior', () => {
     });
   });
 
+  describe('Admin post management', () => {
+    const token = signToken(adminId, 'admin');
+
+    it('GET /api/admin/forums/posts returns 200 with pagination', async () => {
+      const forum = await Forum.create({ title: 'T', description: 'D', category: 'C', createdByAdminId: adminId });
+      await ForumPost.create({ forumId: forum._id, authorId: new mongoose.Types.ObjectId(), authorDisplayMode: 1, publicAuthorName: 'A', title: 'Post 1', content: 'C1', status: 'active' });
+      await ForumPost.create({ forumId: forum._id, authorId: new mongoose.Types.ObjectId(), authorDisplayMode: 1, publicAuthorName: 'A', title: 'Post 2', content: 'C2', status: 'deleted' });
+
+      const res = await request(app)
+        .get('/api/admin/forums/posts')
+        .set('Authorization', `Bearer ${token}`);
+
+      expect(res.status).toBe(200);
+      expect(Array.isArray(res.body.posts)).toBe(true);
+      expect(res.body.posts.length).toBeGreaterThanOrEqual(2);
+    });
+
+    it('GET /api/admin/forums/posts filters by status', async () => {
+      const forum = await Forum.create({ title: 'T', description: 'D', category: 'C', createdByAdminId: adminId });
+      await ForumPost.create({ forumId: forum._id, authorId: new mongoose.Types.ObjectId(), authorDisplayMode: 1, publicAuthorName: 'A', title: 'To Filter', content: 'C', status: 'deleted' });
+
+      const res = await request(app)
+        .get('/api/admin/forums/posts')
+        .query({ status: 'deleted' })
+        .set('Authorization', `Bearer ${token}`);
+
+      expect(res.status).toBe(200);
+      expect(res.body.posts.length).toBeGreaterThan(0);
+      expect(res.body.posts.every((p: any) => p.status === 'deleted')).toBe(true);
+    });
+
+    it('GET /api/admin/forums/posts/:postId returns 200', async () => {
+      const forum = await Forum.create({ title: 'T', description: 'D', category: 'C', createdByAdminId: adminId });
+      const post = await ForumPost.create({ forumId: forum._id, authorId: new mongoose.Types.ObjectId(), authorDisplayMode: 1, publicAuthorName: 'A', title: 'Detail post', content: 'Detail body' });
+
+      const res = await request(app)
+        .get(`/api/admin/forums/posts/${post._id}`)
+        .set('Authorization', `Bearer ${token}`);
+
+      expect(res.status).toBe(200);
+      expect(res.body.post._id).toBe(post._id.toString());
+      expect(Array.isArray(res.body.comments)).toBe(true);
+    });
+
+    it('GET /api/admin/forums/posts/:postId returns 404 for missing post', async () => {
+      const fakeId = new mongoose.Types.ObjectId().toString();
+      const res = await request(app)
+        .get(`/api/admin/forums/posts/${fakeId}`)
+        .set('Authorization', `Bearer ${token}`);
+
+      expect(res.status).toBe(404);
+    });
+  });
+
   describe('Reports queue', () => {
     const token = signToken(adminId, 'admin');
 

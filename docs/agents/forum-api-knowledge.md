@@ -5,7 +5,8 @@
 ## Architecture Notes
 - **Display Mode:** `authorDisplayMode` strictly uses numbers: `0` = Real Name, `1` = Anonymous.
 - **Separation of Concerns:** Moderation (Admin) APIs are separated from User APIs. This enforces strict security boundaries via `requireRole('admin')` middleware.
-- **Data Safety:** Public routes automatically hide private fields like `authorId` and only expose `publicAuthorName`. Deletions are "soft deletes" (changing `status` to `deleted` or `isActive` to `false`) to preserve moderation and audit history.
+- **Account Gating:** All user write routes (`POST`, `PATCH`, `DELETE` on posts/comments) require `requireActiveUser` in addition to `requireAuth`. Pending, rejected, or banned users receive `403`.
+- **Data Safety:** Public routes automatically hide private fields like `authorId` and `likedBy` and only expose `publicAuthorName`. Deletions are "soft deletes" (changing `status` to `deleted` or `isActive` to `false`) to preserve moderation and audit history.
 
 ---
 
@@ -109,7 +110,7 @@
   "forumId": "60d5ec..."
 }
 ```
-*   `forumId` is optional. When omitted, the first active forum is used or a default "General Support" forum is auto-created.
+*   `forumId` is **required**. Must be a valid ObjectId of an active forum. Invalid or inactive forum returns `4xx`.
 *   **Response (201 Created):**
 ```json
 {
@@ -302,7 +303,61 @@
 }
 ```
 
-### 3.5 Delete Any Comment (Moderation)
+### 3.5 List All Posts (Admin)
+*   **Route:** `GET /api/admin/forums/posts?forumId=...&status=...&q=...&limit=...&cursor=...`
+*   **Query Params:** `forumId` (optional, filter by forum), `status` (optional, one of `active|hidden|deleted|under_review`), `q` (optional, full-text search), `limit` (default 20, max 100), `cursor` (optional, last item `_id` for pagination)
+*   **Response (200 OK):**
+```json
+{
+  "posts": [
+    {
+      "_id": "60d5fa...",
+      "forumId": "60d5ec...",
+      "authorId": "user123...",
+      "title": "Post title",
+      "content": "Body",
+      "tags": ["tag1"],
+      "publicAuthorName": "Anonymous",
+      "authorDisplayMode": 1,
+      "status": "active",
+      "likeCount": 3,
+      "commentCount": 1,
+      "createdAt": "2026-06-14T10:30:00.000Z",
+      "updatedAt": "2026-06-14T10:30:00.000Z"
+    }
+  ],
+  "nextCursor": "60d5fb...",
+  "hasNext": false
+}
+```
+
+### 3.6 Get Post Detail (Admin)
+*   **Route:** `GET /api/admin/forums/posts/:postId`
+*   **Auth:** Admin only. Returns full post and all comments (including deleted/hidden) with author IDs visible.
+*   **Response (200 OK):**
+```json
+{
+  "post": {
+    "_id": "60d5fa...",
+    "forumId": "60d5ec...",
+    "authorId": "user123...",
+    "title": "Post title",
+    "content": "Body",
+    "status": "active"
+  },
+  "comments": [
+    {
+      "_id": "60d5fb...",
+      "postId": "60d5fa...",
+      "authorId": "user456...",
+      "content": "Comment body",
+      "status": "active"
+    }
+  ]
+}
+```
+
+### 3.7 Delete Any Comment (Moderation)
 *   **Route:** `DELETE /api/admin/forums/comments/:commentId`
 *   **Response (200 OK):**
 ```json

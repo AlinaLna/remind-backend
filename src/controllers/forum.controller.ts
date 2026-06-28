@@ -61,6 +61,9 @@ const toSafeDocument = (doc: Record<string, unknown> | null | undefined): Record
   if (Object.prototype.hasOwnProperty.call(safePayload, 'authorId')) {
     delete safePayload.authorId;
   }
+  if (Object.prototype.hasOwnProperty.call(safePayload, 'likedBy')) {
+    delete safePayload.likedBy;
+  }
   return safePayload;
 };
 
@@ -99,7 +102,7 @@ export const listForums: RequestHandler = async (req, res) => {
 
 
 export const createPost: RequestHandler = async (req, res) => {
-  const { title, content, tags, authorDisplayMode } = (req.body || {}) as CreatePostBody;
+  const { title, content, tags, authorDisplayMode, forumId } = (req.body || {}) as CreatePostBody;
   const displayMode = authorDisplayMode as AuthorDisplayMode;
   const userId = req.user && req.user.id;
 
@@ -115,22 +118,14 @@ export const createPost: RequestHandler = async (req, res) => {
   if (![0, 1].includes(displayMode as number)) {
     return res.status(400).json({ error: 'Invalid author display mode' });
   }
+  if (typeof forumId !== 'string' || !isValidObjectId(forumId)) {
+    return res.status(400).json({ error: 'Valid forum id is required' });
+  }
 
   try {
-    let actualForumId: string;
-    const firstForum = await Forum.findOne({ isActive: true }).lean();
-    if (firstForum) {
-      actualForumId = firstForum._id.toString();
-    } else {
-      const dummyAdminId = new mongoose.Types.ObjectId();
-      const defaultForum = (await Forum.create({
-        title: 'General Support',
-        description: 'Chủ đề thảo luận chung',
-        category: 'Chung',
-        createdByAdminId: dummyAdminId,
-        isActive: true
-      })) as any;
-      actualForumId = defaultForum._id.toString();
+    const forum = await Forum.findOne({ _id: forumId, isActive: true }).lean();
+    if (!forum) {
+      return res.status(404).json({ error: 'Forum not found' });
     }
 
     const user = await User.findById(userId).lean();
@@ -139,7 +134,7 @@ export const createPost: RequestHandler = async (req, res) => {
     }
 
     const post = await ForumPost.create({
-      forumId: actualForumId,
+      forumId,
       authorId: userId,
       authorDisplayMode: displayMode,
       publicAuthorName: buildPublicAuthorName(user, displayMode),
@@ -419,15 +414,23 @@ export const listForumPosts: RequestHandler = async (req, res) => {
   try {
     const limit = parseInt(req.query.limit as string) || 10;
     const cursor = req.query.cursor as string;
+    const forumId = req.query.forumId as string | undefined;
 
     const query: any = { status: 'active' };
+
+    if (forumId !== undefined) {
+      if (!isValidObjectId(forumId)) {
+        return res.status(400).json({ error: 'Invalid forum id' });
+      }
+      query.forumId = new mongoose.Types.ObjectId(forumId);
+    }
 
     if (cursor && mongoose.Types.ObjectId.isValid(cursor)) {
       query._id = { $lt: new mongoose.Types.ObjectId(cursor) };
     }
 
     const posts = await ForumPost.find(query)
-      .select('-authorId')
+      .select('-authorId -likedBy')
       .sort({ _id: -1 })
       .limit(limit + 1)
       .lean();
@@ -458,7 +461,7 @@ export const getPostDetail: RequestHandler = async (req, res) => {
   }
 
   try {
-    const post = await ForumPost.findOne({ _id: postId, status: 'active' }).select('-authorId').lean();
+    const post = await ForumPost.findOne({ _id: postId, status: 'active' }).select('-authorId -likedBy').lean();
 
     if (!post) {
       return res.status(404).json({ error: 'Post not found' });
@@ -469,7 +472,7 @@ export const getPostDetail: RequestHandler = async (req, res) => {
       .sort({ createdAt: 1 })
       .lean();
 
-    return res.status(200).json({ post, comments });
+    return res.status(200).json({ post: toSafeDocument(post), comments: comments.map(toSafeDocument) });
   } catch (err) {
     console.error('getPostDetail error:', err);
     return res.status(500).json({ error: 'Failed to fetch post detail' });
@@ -494,8 +497,9 @@ export const searchPosts: RequestHandler = async (req, res) => {
 
     return res.status(200).json({
       posts: posts.map((post) => {
-        const { authorId, score, ...safePost } = post as Record<string, unknown> & {
+        const { authorId, likedBy, score, ...safePost } = post as Record<string, unknown> & {
           authorId?: unknown;
+          likedBy?: unknown;
           score?: unknown;
         };
         return safePost;

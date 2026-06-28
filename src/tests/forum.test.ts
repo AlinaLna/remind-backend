@@ -175,6 +175,49 @@ describe('Forum guest browse & search', () => {
 describe('Forum signed-in posting', () => {
   const app = buildApp();
 
+  it('returns 400 when creating a post without forumId', async () => {
+    const user = await User.create({ email: 'student@test.com', role: 'student', status: 'active' });
+    const token = signToken(user._id.toString(), 'student');
+
+    const res = await request(app)
+      .post('/api/forums/posts')
+      .set('Authorization', `Bearer ${token}`)
+      .send({ title: 'Hi', content: 'Body', authorDisplayMode: 0 });
+
+    expect(res.status).toBe(400);
+    expect(res.body.error).toContain('forum id');
+  });
+
+  it('returns 404 when creating a post with non-existent forumId', async () => {
+    const user = await User.create({ email: 'student2@test.com', role: 'student', status: 'active' });
+    const token = signToken(user._id.toString(), 'student');
+    const fakeId = new mongoose.Types.ObjectId().toString();
+
+    const res = await request(app)
+      .post('/api/forums/posts')
+      .set('Authorization', `Bearer ${token}`)
+      .send({ title: 'Hi', content: 'Body', authorDisplayMode: 0, forumId: fakeId });
+
+    expect(res.status).toBe(404);
+    expect(res.body.error).toContain('Forum not found');
+  });
+
+  it('returns 403 when a pending user creates a post', async () => {
+    const forum = await Forum.create({
+      title: 'Forum', description: 'desc', category: 'general',
+      createdByAdminId: new mongoose.Types.ObjectId(), isActive: true,
+    });
+    const user = await User.create({ email: 'pending@test.com', role: 'expert', status: 'pending' });
+    const token = signToken(user._id.toString(), 'expert', 'pending');
+
+    const res = await request(app)
+      .post('/api/forums/posts')
+      .set('Authorization', `Bearer ${token}`)
+      .send({ title: 'Hi', content: 'Body', authorDisplayMode: 0, forumId: forum._id.toString() });
+
+    expect(res.status).toBe(403);
+  });
+
   it('returns 401 when creating a post without authentication', async () => {
     const forum = await Forum.create({
       title: 'Forum',
