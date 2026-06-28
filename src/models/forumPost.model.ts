@@ -16,6 +16,7 @@ const forumPostSchema = new Schema(
       index: true,
     },
     likeCount: { type: Number, default: 0 },
+    likedBy: { type: [Schema.Types.ObjectId], ref: 'User', default: [] },
     commentCount: { type: Number, default: 0 },
   },
   { timestamps: true }

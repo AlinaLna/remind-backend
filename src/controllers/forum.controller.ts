@@ -64,13 +64,37 @@ const toSafeDocument = (doc: Record<string, unknown> | null | undefined): Record
 
 export const listForums: RequestHandler = async (req, res) => {
   try {
-    const forums = await Forum.find({ isActive: true }).sort({ createdAt: -1 }).lean();
-    return res.status(200).json({ forums });
+    const limit = parseInt(req.query.limit as string) || 20;
+    const cursor = req.query.cursor as string;
+
+    const query: any = { isActive: true };
+
+    if (cursor && mongoose.Types.ObjectId.isValid(cursor)) {
+      query._id = { $lt: new mongoose.Types.ObjectId(cursor) };
+    }
+
+    const forums = await Forum.find(query)
+      .sort({ _id: -1 }) // Sắp xếp giảm dần để tin mới nhất lên đầu
+      .limit(limit + 1)
+      .lean();
+
+    const hasNext = forums.length > limit;
+    
+    const items = hasNext ? forums.slice(0, limit) : forums;
+    
+    const nextCursor = items.length > 0 ? items[items.length - 1]._id : null;
+
+    return res.status(200).json({ 
+      forums: items,
+      nextCursor,
+      hasNext
+    });
   } catch (err) {
     console.error('listForums error:', err);
     return res.status(500).json({ error: 'Failed to fetch forums' });
   }
 };
+
 
 export const createPost: RequestHandler = async (req, res) => {
   const { forumId } = req.params as unknown as ForumParams;
@@ -194,7 +218,7 @@ export const updatePost: RequestHandler = async (req, res) => {
 
 export const createComment: RequestHandler = async (req, res) => {
   const { postId } = req.params as unknown as PostParams;
-  const { content, authorDisplayMode } = (req.body || {}) as CreateCommentBody;
+  const { content, authorDisplayMode, parentId } = (req.body || {}) as CreateCommentBody & { parentId?: string };
   const displayMode = authorDisplayMode as AuthorDisplayMode;
   const userId = req.user && req.user.id;
 
@@ -230,6 +254,7 @@ export const createComment: RequestHandler = async (req, res) => {
       content: content.trim(),
       status: 'active',
       likeCount: 0,
+      parentId: parentId && isValidObjectId(parentId) ? parentId : null,
     });
 
     await ForumPost.updateOne({ _id: postId }, { $inc: { commentCount: 1 } });
@@ -452,5 +477,45 @@ export const searchPosts: RequestHandler = async (req, res) => {
   } catch (err) {
     console.error('searchPosts error:', err);
     return res.status(500).json({ error: 'Failed to search forum posts' });
+  }
+};
+
+export const toggleLike: RequestHandler = async (req, res) => {
+  const { postId } = req.params;
+  const userId = req.user?.id;
+
+  if (!isValidObjectId(postId as string)) {
+    return res.status(400).json({ error: 'Invalid post id' });
+  }
+  if (!isValidObjectId(userId)) {
+    return res.status(401).json({ error: 'Invalid token' });
+  }
+
+  try {
+    const post = await ForumPost.findById(postId);
+    if (!post) {
+      return res.status(404).json({ error: 'Post not found' });
+    }
+
+    const likedBy = (post.likedBy || []).map((id: any) => id.toString());
+    const index = likedBy.indexOf(userId);
+
+    if (index === -1) {
+      likedBy.push(userId);
+    } else {
+      likedBy.splice(index, 1);
+    }
+
+    post.likedBy = likedBy;
+    post.likeCount = likedBy.length;
+    await post.save();
+
+    return res.status(200).json({
+      message: 'Toggle like successful',
+      post: toSafeDocument(post.toObject())
+    });
+  } catch (err) {
+    console.error('toggleLike error:', err);
+    return res.status(500).json({ error: 'Failed to toggle like' });
   }
 };
