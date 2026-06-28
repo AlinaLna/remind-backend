@@ -99,10 +99,9 @@ export const listForums: RequestHandler = async (req, res) => {
 
 
 export const createPost: RequestHandler = async (req, res) => {
-  const { title, content, tags, authorDisplayMode, forumId: bodyForumId } = (req.body || {}) as CreatePostBody;
+  const { title, content, tags, authorDisplayMode } = (req.body || {}) as CreatePostBody;
   const displayMode = authorDisplayMode as AuthorDisplayMode;
   const userId = req.user && req.user.id;
-  const forumId = (req.params as any).forumId || bodyForumId || req.query.forumId;
 
   if (!isValidObjectId(userId)) {
     return res.status(401).json({ error: 'Invalid token' });
@@ -118,30 +117,20 @@ export const createPost: RequestHandler = async (req, res) => {
   }
 
   try {
-    let actualForumId = forumId as string | undefined;
-    if (!actualForumId) {
-      const firstForum = await Forum.findOne({ isActive: true }).lean();
-      if (firstForum) {
-        actualForumId = firstForum._id.toString();
-      } else {
-        const dummyAdminId = new mongoose.Types.ObjectId();
-        const defaultForum = (await Forum.create({
-          title: 'General Support',
-          description: 'Chủ đề thảo luận chung',
-          category: 'Chung',
-          createdByAdminId: dummyAdminId,
-          isActive: true
-        })) as any;
-        actualForumId = defaultForum._id.toString();
-      }
+    let actualForumId: string;
+    const firstForum = await Forum.findOne({ isActive: true }).lean();
+    if (firstForum) {
+      actualForumId = firstForum._id.toString();
     } else {
-      if (!isValidObjectId(actualForumId)) {
-        return res.status(400).json({ error: 'Invalid forum id' });
-      }
-      const forum = await Forum.findOne({ _id: actualForumId, isActive: true }).lean();
-      if (!forum) {
-        return res.status(404).json({ error: 'Forum not found' });
-      }
+      const dummyAdminId = new mongoose.Types.ObjectId();
+      const defaultForum = (await Forum.create({
+        title: 'General Support',
+        description: 'Chủ đề thảo luận chung',
+        category: 'Chung',
+        createdByAdminId: dummyAdminId,
+        isActive: true
+      })) as any;
+      actualForumId = defaultForum._id.toString();
     }
 
     const user = await User.findById(userId).lean();
@@ -427,20 +416,11 @@ export const deleteComment: RequestHandler = async (req, res) => {
 };
 
 export const listForumPosts: RequestHandler = async (req, res) => {
-  const forumId = ((req.params as any).forumId || req.query.forumId) as string | undefined;
-
   try {
     const limit = parseInt(req.query.limit as string) || 10;
     const cursor = req.query.cursor as string;
 
     const query: any = { status: 'active' };
-
-    if (forumId) {
-      if (!isValidObjectId(forumId)) {
-        return res.status(400).json({ error: 'Invalid forum id' });
-      }
-      query.forumId = forumId;
-    }
 
     if (cursor && mongoose.Types.ObjectId.isValid(cursor)) {
       query._id = { $lt: new mongoose.Types.ObjectId(cursor) };
