@@ -9,11 +9,11 @@ router.get('/search', searchPosts);
 router.get('/posts/:postId', getPostDetail);
 router.patch('/posts/:postId', requireAuth, updatePost);
 router.delete('/posts/:postId', requireAuth, deletePost);
-router.post('/:forumId/posts', requireAuth, createPost);
+router.post('/posts', requireAuth, createPost);
 router.post('/posts/:postId/like', requireAuth, toggleLike);
 router.patch('/comments/:commentId', requireAuth, updateComment);
 router.delete('/comments/:commentId', requireAuth, deleteComment);
 router.post('/posts/:postId/comments', requireAuth, createComment);
-router.get('/:forumId/posts', listForumPosts);
+router.get('/posts', listForumPosts);
 
 export default router;

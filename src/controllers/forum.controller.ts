@@ -6,6 +6,7 @@ import ForumComment from '../models/forumComment.model';
 import User from '../models/user.model';
 import Log from '../models/log.model';
 import type { AuthorDisplayMode } from '../types/common';
+import { logDB } from '../utils/log';
 
 interface ForumParams {
   forumId: string;
@@ -102,9 +103,6 @@ export const createPost: RequestHandler = async (req, res) => {
   const displayMode = authorDisplayMode as AuthorDisplayMode;
   const userId = req.user && req.user.id;
 
-  if (!isValidObjectId(forumId)) {
-    return res.status(400).json({ error: 'Invalid forum id' });
-  }
   if (!isValidObjectId(userId)) {
     return res.status(401).json({ error: 'Invalid token' });
   }
@@ -119,9 +117,30 @@ export const createPost: RequestHandler = async (req, res) => {
   }
 
   try {
-    const forum = await Forum.findOne({ _id: forumId, isActive: true }).lean();
-    if (!forum) {
-      return res.status(404).json({ error: 'Forum not found' });
+    let actualForumId = forumId;
+    if (!actualForumId) {
+      const firstForum = await Forum.findOne({ isActive: true }).lean();
+      if (firstForum) {
+        actualForumId = firstForum._id.toString();
+      } else {
+        const dummyAdminId = new mongoose.Types.ObjectId();
+        const defaultForum = (await Forum.create({
+          title: 'General Support',
+          description: 'Chủ đề thảo luận chung',
+          category: 'Chung',
+          createdByAdminId: dummyAdminId,
+          isActive: true
+        })) as any;
+        actualForumId = defaultForum._id.toString();
+      }
+    } else {
+      if (!isValidObjectId(actualForumId)) {
+        return res.status(400).json({ error: 'Invalid forum id' });
+      }
+      const forum = await Forum.findOne({ _id: actualForumId, isActive: true }).lean();
+      if (!forum) {
+        return res.status(404).json({ error: 'Forum not found' });
+      }
     }
 
     const user = await User.findById(userId).lean();
@@ -130,7 +149,7 @@ export const createPost: RequestHandler = async (req, res) => {
     }
 
     const post = await ForumPost.create({
-      forumId,
+      forumId: actualForumId,
       authorId: userId,
       authorDisplayMode: displayMode,
       publicAuthorName: buildPublicAuthorName(user, displayMode),
@@ -144,8 +163,11 @@ export const createPost: RequestHandler = async (req, res) => {
       commentCount: 0,
     });
 
+    logDB.write('ForumPost', 'create', post._id.toString(), { title: post.title });
+
     return res.status(201).json({ post: toSafeDocument(await ForumPost.findById(post._id).lean()) });
-  } catch (err) {
+  } catch (err: any) {
+    logDB.error('ForumPost', 'create', err);
     console.error('createPost error:', err);
     return res.status(500).json({ error: 'Failed to create forum post' });
   }
@@ -406,18 +428,42 @@ export const deleteComment: RequestHandler = async (req, res) => {
 export const listForumPosts: RequestHandler = async (req, res) => {
   const { forumId } = req.params as unknown as ForumParams;
 
-  if (!isValidObjectId(forumId)) {
-    return res.status(400).json({ error: 'Invalid forum id' });
-  }
-
   try {
-    const posts = await ForumPost.find({ forumId, status: 'active' })
+    const limit = parseInt(req.query.limit as string) || 10;
+    const cursor = req.query.cursor as string;
+
+    const query: any = { status: 'active' };
+
+    if (forumId) {
+      if (!isValidObjectId(forumId)) {
+        return res.status(400).json({ error: 'Invalid forum id' });
+      }
+      query.forumId = forumId;
+    }
+
+    if (cursor && mongoose.Types.ObjectId.isValid(cursor)) {
+      query._id = { $lt: new mongoose.Types.ObjectId(cursor) };
+    }
+
+    const posts = await ForumPost.find(query)
       .select('-authorId')
-      .sort({ createdAt: -1 })
+      .sort({ _id: -1 })
+      .limit(limit + 1)
       .lean();
 
-    return res.status(200).json({ posts });
-  } catch (err) {
+    const hasNext = posts.length > limit;
+    const items = hasNext ? posts.slice(0, limit) : posts;
+    const nextCursor = items.length > 0 ? items[items.length - 1]._id : null;
+
+    logDB.read('ForumPost', query, items.length);
+
+    return res.status(200).json({
+      posts: items.map(toSafeDocument),
+      nextCursor,
+      hasNext
+    });
+  } catch (err: any) {
+    logDB.error('ForumPost', 'listForumPosts', err);
     console.error('listForumPosts error:', err);
     return res.status(500).json({ error: 'Failed to fetch forum posts' });
   }
