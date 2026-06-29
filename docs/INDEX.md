@@ -45,6 +45,7 @@ Single entry point to navigate all documentation. For each doc: what it is, who 
 | File | Purpose | Audience | Cross-refs | Update when |
 |------|---------|----------|------------|-------------|
 | `api/forum.md` | Route listing grouped by access level | Humans, Agents | refs agents/forum-api-knowledge.md for full payloads | Adding/modifying forum routes |
+| `api/auth.md` | Auth endpoint shapes — register, login, google, refresh, logout | All | refs adr/0002 | Adding/modifying auth endpoints |
 
 ## Update Rules
 
@@ -61,7 +62,6 @@ Single entry point to navigate all documentation. For each doc: what it is, who 
 
 ## Known Gaps
 
-- No `api/auth.md` — auth endpoint shapes only documented in `TECHNICAL_STACK.md` (code samples), not as structured API docs
 - No `api/experts.md` — expert routes only listed in `TECHNICAL_STACK.md` outline
 - `CONTEXT.md` referenced by `agents/domain.md` lives at `docs/knowledge/CONTEXT.md`, not root (root `CONTEXT.md` does not exist)
 - `.scratch/` directory exists but is empty — no issues/PRDs created yet

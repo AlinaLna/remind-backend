@@ -3,7 +3,6 @@ import bcrypt from 'bcryptjs';
 import { randomUUID } from 'crypto';
 import { createHash } from 'crypto';
 import jwt from 'jsonwebtoken';
-import { OAuth2Client } from 'google-auth-library';
 import mongoose from 'mongoose';
 import User from '../models/user.model';
 import type { AuthTokenPayload, UserRole, UserStatus } from '../types/common';
@@ -245,17 +244,30 @@ export const refresh: RequestHandler<{}, unknown, RefreshBody> = async (req, res
   }
 };
 
-const getGoogleClient = (): OAuth2Client => {
-  const clientId = process.env.GOOGLE_CLIENT_ID;
-  if (!clientId) {
-    throw new Error('GOOGLE_CLIENT_ID not configured');
-  }
-  return new OAuth2Client(clientId);
-};
-
 interface GoogleLoginBody {
   googleToken?: unknown;
 }
+
+interface GoogleUserInfo {
+  sub: string;
+  email: string;
+  name?: string;
+  picture?: string;
+}
+
+const getGoogleUserInfo = async (accessToken: string): Promise<GoogleUserInfo> => {
+  const response = await fetch('https://www.googleapis.com/oauth2/v3/userinfo', {
+    headers: { Authorization: `Bearer ${accessToken}` },
+  });
+  if (!response.ok) {
+    throw new Error('Invalid Google token');
+  }
+  const data = await response.json() as GoogleUserInfo;
+  if (!data.email) {
+    throw new Error('Google account has no email');
+  }
+  return data;
+};
 
 export const googleLogin: RequestHandler<{}, unknown, GoogleLoginBody> = async (req, res) => {
   try {
@@ -264,19 +276,11 @@ export const googleLogin: RequestHandler<{}, unknown, GoogleLoginBody> = async (
       return res.status(400).json({ error: 'Google token is required' });
     }
 
-    const client = getGoogleClient();
-    const ticket = await client.verifyIdToken({
-      idToken: googleToken,
-      audience: process.env.GOOGLE_CLIENT_ID,
-    });
-    const payload = ticket.getPayload();
-    if (!payload || !payload.email) {
-      return res.status(400).json({ error: 'Invalid Google token' });
-    }
+    const info = await getGoogleUserInfo(googleToken);
 
-    const email = payload.email.toLowerCase();
-    const fullName = payload.name?.trim() || email.split('@')[0];
-    const googleId = payload.sub;
+    const email = info.email.toLowerCase();
+    const fullName = info.name?.trim() || email.split('@')[0];
+    const googleId = info.sub;
 
     let user = await User.findOne({ email });
     if (user) {
@@ -305,9 +309,6 @@ export const googleLogin: RequestHandler<{}, unknown, GoogleLoginBody> = async (
       refreshToken,
     });
   } catch (error) {
-    if (error instanceof Error && error.message === 'GOOGLE_CLIENT_ID not configured') {
-      return res.status(500).json({ error: 'Google login not configured' });
-    }
     console.error('Google login error:', error);
     return res.status(401).json({ error: 'Invalid Google token' });
   }

@@ -58,6 +58,9 @@ Stores every login account.
 {
   _id: ObjectId,
   email: String,
+  passwordHash: String, // bcrypt, select: false
+  refreshTokenHash: String, // bcrypt(sha256(token)), select: false
+  googleId: String, // sparse unique index; null for email-only users
   fullName: String,
   avatarUrl: String,
   phone: String,

@@ -3,13 +3,8 @@ import request from 'supertest';
 import bcrypt from 'bcryptjs';
 import { createHash } from 'crypto';
 import type { Express } from 'express';
-import { OAuth2Client } from 'google-auth-library';
 import authRoutes from '../routes/auth.routes';
-
-jest.mock('google-auth-library');
 import User from '../models/user.model';
-
-const mockVerifyIdToken = OAuth2Client.prototype.verifyIdToken as jest.Mock;
 
 const buildApp = (): Express => {
   const app = express();
@@ -166,13 +161,18 @@ describe('Auth API', () => {
 
   describe('POST /api/auth/google', () => {
     beforeEach(() => {
-      mockVerifyIdToken.mockReset();
+      global.fetch = jest.fn().mockResolvedValue({ ok: true, json: () => Promise.resolve({}) });
       process.env.GOOGLE_CLIENT_ID = 'test-client-id';
     });
 
+    afterEach(() => {
+      delete (global as any).fetch;
+    });
+
     it('creates a new user from Google token and returns tokens', async () => {
-      mockVerifyIdToken.mockResolvedValue({
-        getPayload: () => ({
+      (global.fetch as jest.Mock).mockResolvedValue({
+        ok: true,
+        json: () => Promise.resolve({
           sub: 'google-sub-123',
           email: 'googleuser@example.com',
           name: 'Google User',
@@ -206,8 +206,9 @@ describe('Auth API', () => {
         status: 'active',
       });
 
-      mockVerifyIdToken.mockResolvedValue({
-        getPayload: () => ({
+      (global.fetch as jest.Mock).mockResolvedValue({
+        ok: true,
+        json: () => Promise.resolve({
           sub: 'google-sub-456',
           email: 'existing@example.com',
           name: 'Existing User',
@@ -236,8 +237,9 @@ describe('Auth API', () => {
         status: 'banned',
       });
 
-      mockVerifyIdToken.mockResolvedValue({
-        getPayload: () => ({
+      (global.fetch as jest.Mock).mockResolvedValue({
+        ok: true,
+        json: () => Promise.resolve({
           sub: 'google-sub-789',
           email: 'bannedgoogle@example.com',
           name: 'Banned Google',
@@ -260,7 +262,7 @@ describe('Auth API', () => {
     });
 
     it('rejects invalid Google token', async () => {
-      mockVerifyIdToken.mockRejectedValue(new Error('Invalid token'));
+      (global.fetch as jest.Mock).mockResolvedValue({ ok: false });
 
       const res = await request(app)
         .post('/api/auth/google')

@@ -127,21 +127,23 @@ const isValid = await bcrypt.hash(password, hash);
 
 ### Google OAuth Integration
 
-**Decision:** google-auth-library + Passport Google Strategy
+**Decision:** Frontend `@react-oauth/google` (implicit flow) → backend verifies with Google userinfo API
 
 **Implementation:**
-- Use `passport-google-oauth20` strategy
-- Verify Google ID token with `google-auth-library`
-- On successful OAuth:
-  - Check if user exists by email
-  - Create new user if doesn't exist
-  - Generate JWT tokens
-  - Set refresh token cookie
+- Frontend uses `useGoogleLogin` hook from `@react-oauth/google` to get an `access_token`
+- Frontend sends `access_token` to `POST /api/auth/google`
+- Backend calls `https://www.googleapis.com/oauth2/v3/userinfo` with `Authorization: Bearer <access_token>` to verify the token and fetch user info
+- On success:
+  - If user exists by email → log in (link `googleId` if not linked)
+  - If user doesn't exist → create new user as `student` / `active`
+  - Generate JWT access + refresh token pair (same flow as email login)
+
+**No Passport.js needed.** No server-side OAuth redirect flow. The frontend handles the Google OAuth popup natively.
 
 **Required Google Cloud Setup:**
-- Create OAuth 2.0 credentials
-- Configure authorized redirect URIs
-- Store Client ID and Client Secret in environment variables
+- Create OAuth 2.0 Web Client ID (for frontend)
+- Store Client ID in frontend `.env` as `VITE_GOOGLE_CLIENT_ID` and backend `.env` as `GOOGLE_CLIENT_ID`
+- No client secret or redirect URIs needed (implicit flow + userinfo API)
 
 ## Database & Storage
 
@@ -384,10 +386,9 @@ const limiter = rateLimit({
   /auth
     POST   /register
     POST   /login
-    POST   /logout
+    POST   /google
     POST   /refresh
-    GET    /google
-    GET    /google/callback
+    POST   /logout
   /users
     GET    /me
     PATCH  /me
