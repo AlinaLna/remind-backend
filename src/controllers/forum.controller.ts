@@ -49,7 +49,7 @@ const buildPublicAuthorName = (
   return (user && typeof user.fullName === 'string' && user.fullName.trim()) || 'Anonymous';
 };
 
-const toSafeDocument = (doc: Record<string, unknown> | null | undefined): Record<string, unknown> | null | undefined => {
+const toSafeDocument = (doc: Record<string, unknown> | null | undefined, currentUserId?: string): Record<string, unknown> | null | undefined => {
   const payload = doc && typeof (doc as { toObject?: () => Record<string, unknown> }).toObject === 'function'
     ? (doc as { toObject: () => Record<string, unknown> }).toObject()
     : doc;
@@ -58,6 +58,12 @@ const toSafeDocument = (doc: Record<string, unknown> | null | undefined): Record
   }
 
   const safePayload = { ...payload };
+  if (currentUserId && safePayload.authorId) {
+    safePayload.isMine = safePayload.authorId.toString() === currentUserId.toString();
+  } else {
+    safePayload.isMine = false;
+  }
+
   if (Object.prototype.hasOwnProperty.call(safePayload, 'authorId')) {
     delete safePayload.authorId;
   }
@@ -150,7 +156,7 @@ export const createPost: RequestHandler = async (req, res) => {
 
     logDB.write('ForumPost', 'create', post._id.toString(), { title: post.title });
 
-    return res.status(201).json({ post: toSafeDocument(await ForumPost.findById(post._id).lean()) });
+    return res.status(201).json({ post: toSafeDocument(await ForumPost.findById(post._id).lean(), userId) });
   } catch (err: any) {
     logDB.error('ForumPost', 'create', err);
     console.error('createPost error:', err);
@@ -216,7 +222,7 @@ export const updatePost: RequestHandler = async (req, res) => {
       metadata: { authorDisplayMode: post.authorDisplayMode }
     }).catch(err => console.error('Failed to write post.update log:', err));
 
-    return res.status(200).json({ message: 'Post updated successfully', post: toSafeDocument(post as any) });
+    return res.status(200).json({ message: 'Post updated successfully', post: toSafeDocument(post as any, userId) });
   } catch (err) {
     console.error('updatePost error:', err);
     return res.status(500).json({ error: 'Failed to update post' });
@@ -266,7 +272,7 @@ export const createComment: RequestHandler = async (req, res) => {
 
     await ForumPost.updateOne({ _id: postId }, { $inc: { commentCount: 1 } });
 
-    return res.status(201).json({ comment: toSafeDocument(await ForumComment.findById(comment._id).lean()) });
+    return res.status(201).json({ comment: toSafeDocument(await ForumComment.findById(comment._id).lean(), userId) });
   } catch (err) {
     console.error('createComment error:', err);
     return res.status(500).json({ error: 'Failed to create forum comment' });
@@ -306,7 +312,7 @@ export const deletePost: RequestHandler = async (req, res) => {
       targetId: post._id
     }).catch(err => console.error('Failed to write post.delete log:', err));
 
-    return res.status(200).json({ message: 'Post deleted successfully', post: toSafeDocument(post as any) });
+    return res.status(200).json({ message: 'Post deleted successfully', post: toSafeDocument(post as any, userId) });
   } catch (err) {
     console.error('deletePost error:', err);
     return res.status(500).json({ error: 'Failed to delete post' });
@@ -360,7 +366,7 @@ export const updateComment: RequestHandler = async (req, res) => {
       metadata: { postId: comment.postId, authorDisplayMode: comment.authorDisplayMode }
     }).catch(err => console.error('Failed to write comment.update log:', err));
 
-    return res.status(200).json({ message: 'Comment updated successfully', comment: toSafeDocument(comment as any) });
+    return res.status(200).json({ message: 'Comment updated successfully', comment: toSafeDocument(comment as any, userId) });
   } catch (err) {
     console.error('updateComment error:', err);
     return res.status(500).json({ error: 'Failed to update comment' });
@@ -403,7 +409,7 @@ export const deleteComment: RequestHandler = async (req, res) => {
       metadata: { postId: comment.postId }
     }).catch(err => console.error('Failed to write comment.delete log:', err));
 
-    return res.status(200).json({ message: 'Comment deleted successfully', comment: toSafeDocument(comment as any) });
+    return res.status(200).json({ message: 'Comment deleted successfully', comment: toSafeDocument(comment as any, userId) });
   } catch (err) {
     console.error('deleteComment error:', err);
     return res.status(500).json({ error: 'Failed to delete comment' });
@@ -430,7 +436,7 @@ export const listForumPosts: RequestHandler = async (req, res) => {
     }
 
     const posts = await ForumPost.find(query)
-      .select('-authorId -likedBy')
+      .select('-likedBy')
       .sort({ _id: -1 })
       .limit(limit + 1)
       .lean();
@@ -442,7 +448,7 @@ export const listForumPosts: RequestHandler = async (req, res) => {
     logDB.read('ForumPost', query, items.length);
 
     return res.status(200).json({
-      posts: items.map(toSafeDocument),
+      posts: items.map(p => toSafeDocument(p, req.user?.id)),
       nextCursor,
       hasNext
     });
@@ -461,18 +467,17 @@ export const getPostDetail: RequestHandler = async (req, res) => {
   }
 
   try {
-    const post = await ForumPost.findOne({ _id: postId, status: 'active' }).select('-authorId -likedBy').lean();
+    const post = await ForumPost.findOne({ _id: postId, status: 'active' }).select('-likedBy').lean();
 
     if (!post) {
       return res.status(404).json({ error: 'Post not found' });
     }
 
     const comments = await ForumComment.find({ postId, status: 'active' })
-      .select('-authorId')
       .sort({ createdAt: 1 })
       .lean();
 
-    return res.status(200).json({ post: toSafeDocument(post), comments: comments.map(toSafeDocument) });
+    return res.status(200).json({ post: toSafeDocument(post, req.user?.id), comments: comments.map(c => toSafeDocument(c, req.user?.id)) });
   } catch (err) {
     console.error('getPostDetail error:', err);
     return res.status(500).json({ error: 'Failed to fetch post detail' });
@@ -502,6 +507,11 @@ export const searchPosts: RequestHandler = async (req, res) => {
           likedBy?: unknown;
           score?: unknown;
         };
+        if (req.user?.id && authorId) {
+          (safePost as any).isMine = authorId.toString() === req.user.id.toString();
+        } else {
+          (safePost as any).isMine = false;
+        }
         return safePost;
       }),
     });
@@ -545,7 +555,7 @@ export const toggleLike: RequestHandler = async (req, res) => {
     return res.status(200).json({
       message: 'Toggle like successful',
       liked: !wasLiked,
-      post: toSafeDocument(post.toObject())
+      post: toSafeDocument(post.toObject(), userId)
     });
   } catch (err) {
     console.error('toggleLike error:', err);
