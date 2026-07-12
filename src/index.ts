@@ -6,6 +6,7 @@ import 'dotenv/config';
 import { connectDB } from './config/db';
 import adminRoutes from './routes/admin.routes';
 import forumRoutes from './routes/forum.routes';
+import expertRoutes from './routes/expert.routes';
 import authRoutes from './routes/auth.routes';
 import chatRoutes from './routes/chat.routes';
 import aiRoutes from './routes/ai.routes';
@@ -32,6 +33,7 @@ app.get('/health', (req: Request, res: Response) => {
 
 app.use('/api/auth', authRoutes);
 app.use('/api/admin', adminRoutes);
+app.use('/api/experts', expertRoutes);
 app.use('/api/forums', forumRoutes);
 app.use('/api/chats', chatRoutes);
 app.use('/api/ai', aiRoutes);
