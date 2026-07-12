@@ -115,6 +115,76 @@ export const updateForum: RequestHandler = async (req, res) => {
   }
 };
 
+export const listForumPosts: RequestHandler = async (req, res) => {
+  try {
+    const limit = Math.min(parseInt(req.query.limit as string) || 20, 100);
+    const cursor = req.query.cursor as string;
+    const forumId = req.query.forumId as string | undefined;
+    const status = req.query.status as string | undefined;
+    const search = req.query.q as string | undefined;
+
+    const filter: Record<string, unknown> = {};
+
+    if (forumId !== undefined) {
+      if (!isValidObjectId(forumId)) {
+        return res.status(400).json({ error: 'Invalid forum id' });
+      }
+      filter.forumId = new mongoose.Types.ObjectId(forumId);
+    }
+
+    if (status !== undefined) {
+      if (!['active', 'hidden', 'deleted', 'under_review'].includes(status)) {
+        return res.status(400).json({ error: `Invalid status: ${status}. Valid: active, hidden, deleted, under_review` });
+      }
+      filter.status = status;
+    }
+
+    if (search !== undefined && search.trim().length > 0) {
+      filter.$text = { $search: search.trim() };
+    }
+
+    if (cursor && mongoose.Types.ObjectId.isValid(cursor)) {
+      filter._id = { $lt: new mongoose.Types.ObjectId(cursor) };
+    }
+
+    const posts = await ForumPost.find(filter)
+      .sort({ _id: -1 })
+      .limit(limit + 1)
+      .lean();
+
+    const hasNext = posts.length > limit;
+    const items = hasNext ? posts.slice(0, limit) : posts;
+    const nextCursor = items.length > 0 ? items[items.length - 1]._id : null;
+
+    return res.status(200).json({ posts: items, nextCursor, hasNext });
+  } catch (err) {
+    console.error('listForumPosts error:', err);
+    return res.status(500).json({ error: 'Failed to fetch forum posts' });
+  }
+};
+
+export const getForumPost: RequestHandler = async (req, res) => {
+  try {
+    const { postId } = req.params;
+
+    if (!isValidObjectId(postId as string)) {
+      return res.status(400).json({ error: 'Invalid post id' });
+    }
+
+    const post = await ForumPost.findById(postId).lean();
+    if (!post) {
+      return res.status(404).json({ error: 'Post not found' });
+    }
+
+    const comments = await ForumComment.find({ postId }).sort({ createdAt: 1 }).lean();
+
+    return res.status(200).json({ post, comments });
+  } catch (err) {
+    console.error('getForumPost error:', err);
+    return res.status(500).json({ error: 'Failed to fetch forum post' });
+  }
+};
+
 export const deleteForumPost: RequestHandler = async (req, res) => {
   try {
     const { postId } = req.params;
@@ -257,8 +327,8 @@ export const approveExpert: RequestHandler = async (req, res) => {
     if (expert.role !== 'expert') {
       return res.status(400).json({ error: 'Target user is not an expert' });
     }
-    if ((expert.status as string) === 'approved') {
-      return res.status(409).json({ error: 'Expert already approved' });
+    if ((expert.status as string) === 'active') {
+      return res.status(409).json({ error: 'Expert already active' });
     }
 
     const reviewedBy = adminId ? new mongoose.Types.ObjectId(adminId) : undefined;

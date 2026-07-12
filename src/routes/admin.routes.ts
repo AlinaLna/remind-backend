@@ -1,6 +1,6 @@
 import { Router } from 'express';
 import { requireAuth, requireRole } from '../middlewares/auth.middleware';
-import { approveExpert, getPendingExperts, getReports, rejectExpert, resolveReport, createForum, updateForum, deleteForumPost, deleteForum, deleteForumComment } from '../controllers/admin.controller';
+import { approveExpert, getPendingExperts, getReports, rejectExpert, resolveReport, createForum, updateForum, deleteForumPost, deleteForum, deleteForumComment, listForumPosts, getForumPost } from '../controllers/admin.controller';
 
 const router = Router();
 
@@ -10,7 +10,11 @@ router.use(requireRole('admin'));
 router.post('/forums', createForum);
 router.patch('/forums/:forumId', updateForum);
 router.delete('/forums/:forumId', deleteForum);
+
+router.get('/forums/posts', listForumPosts);
+router.get('/forums/posts/:postId', getForumPost);
 router.delete('/forums/posts/:postId', deleteForumPost);
+
 router.delete('/forums/comments/:commentId', deleteForumComment);
 
 router.get('/experts/pending', getPendingExperts);

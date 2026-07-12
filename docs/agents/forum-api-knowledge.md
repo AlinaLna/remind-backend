@@ -5,7 +5,8 @@
 ## Architecture Notes
 - **Display Mode:** `authorDisplayMode` strictly uses numbers: `0` = Real Name, `1` = Anonymous.
 - **Separation of Concerns:** Moderation (Admin) APIs are separated from User APIs. This enforces strict security boundaries via `requireRole('admin')` middleware.
-- **Data Safety:** Public routes automatically hide private fields like `authorId` and only expose `publicAuthorName`. Deletions are "soft deletes" (changing `status` to `deleted` or `isActive` to `false`) to preserve moderation and audit history.
+- **Account Gating:** All user write routes (`POST`, `PATCH`, `DELETE` on posts/comments) require `requireActiveUser` in addition to `requireAuth`. Pending, rejected, or banned users receive `403`.
+- **Data Safety:** Public routes automatically hide private fields like `authorId` and `likedBy` and only expose `publicAuthorName`. Deletions are "soft deletes" (changing `status` to `deleted` or `isActive` to `false`) to preserve moderation and audit history.
 
 ---
 
@@ -13,6 +14,9 @@
 
 ### 1.1 List Active Forums
 *   **Route:** `GET /api/forums`
+*   **Query Parameters:**
+    *   `limit` (number, optional, default: 20)
+    *   `cursor` (string, optional) - cursor pagination ID.
 *   **Response (200 OK):**
 ```json
 {
@@ -26,12 +30,17 @@
       "createdAt": "2026-06-14T10:00:00.000Z",
       "updatedAt": "2026-06-14T10:00:00.000Z"
     }
-  ]
+  ],
+  "nextCursor": "60d5ec...",
+  "hasNext": false
 }
 ```
 
-### 1.2 List Posts within a Forum
-*   **Route:** `GET /api/forums/:forumId/posts`
+### 1.2 List Active Posts Globally
+*   **Route:** `GET /api/forums/posts`
+*   **Query Parameters:**
+    *   `limit` (number, optional, default: 10)
+    *   `cursor` (string, optional) - cursor pagination ID.
 *   **Response (200 OK):**
 ```json
 {
@@ -50,7 +59,9 @@
       "createdAt": "2026-06-14T10:30:00.000Z",
       "updatedAt": "2026-06-14T10:30:00.000Z"
     }
-  ]
+  ],
+  "nextCursor": "60d5fa...",
+  "hasNext": false
 }
 ```
 
@@ -75,6 +86,7 @@
     {
       "_id": "60d5fb...",
       "postId": "60d5fa...",
+      "parentId": null,
       "content": "Take deep breaths. You can do this!",
       "publicAuthorName": "Dr. Sarah",
       "authorDisplayMode": 0,
@@ -88,14 +100,34 @@
 
 ### 1.4 Search Posts
 *   **Route:** `GET /api/forums/search?q=stress`
-*   **Response (200 OK):** *(Returns same format as 1.2 List Posts)*
+*   **Response (200 OK):**
+```json
+{
+  "posts": [
+    {
+      "_id": "60d5fa...",
+      "forumId": "60d5ec...",
+      "title": "How to handle exam stress?",
+      "content": "I have finals coming up and I am panicking...",
+      "tags": ["stress", "exams"],
+      "publicAuthorName": "Anonymous",
+      "authorDisplayMode": 1,
+      "status": "active",
+      "likeCount": 5,
+      "commentCount": 2,
+      "createdAt": "2026-06-14T10:30:00.000Z",
+      "updatedAt": "2026-06-14T10:30:00.000Z"
+    }
+  ]
+}
+```
 
 ---
 
 ## 🔵 2. User APIs (Auth Required: Bearer Token)
 
 ### 2.1 Create a Post
-*   **Route:** `POST /api/forums/:forumId/posts`
+*   **Route:** `POST /api/forums/posts`
 *   **Request JSON:**
 ```json
 {
@@ -105,13 +137,13 @@
   "authorDisplayMode": 1
 }
 ```
+*   `forumId` is **required**. Must be a valid ObjectId of an active forum. Invalid or inactive forum returns `4xx`.
 *   **Response (201 Created):**
 ```json
 {
   "post": {
     "_id": "60d5fc...",
     "forumId": "60d5ec...",
-    "authorId": "user123...", 
     "title": "Need advice on sleep",
     "content": "I haven't been sleeping well lately.",
     "tags": ["sleep", "health"],
@@ -122,6 +154,7 @@
   }
 }
 ```
+*Note: The backend automatically maps the post to the first active forum or a default one if none are active.*
 
 ### 2.2 Edit Own Post
 *   **Route:** `PATCH /api/forums/posts/:postId`
@@ -167,16 +200,18 @@
 ```json
 {
   "content": "Try avoiding screens an hour before bed.",
-  "authorDisplayMode": 0
+  "authorDisplayMode": 0,
+  "parentId": "60d5fb..."
 }
 ```
+*Note: `parentId` is optional, used for nesting comment replies.*
 *   **Response (201 Created):**
 ```json
 {
   "comment": {
     "_id": "60d5fd...",
     "postId": "60d5fc...",
-    "authorId": "user123...",
+    "parentId": "60d5fb...",
     "content": "Try avoiding screens an hour before bed.",
     "publicAuthorName": "John Doe",
     "authorDisplayMode": 0,
@@ -216,6 +251,23 @@
   "comment": {
     "_id": "60d5fd...",
     "status": "deleted"
+  }
+}
+```
+
+### 2.7 Toggle Like
+*   **Route:** `POST /api/forums/posts/:postId/like`
+*   **Response (200 OK):**
+```json
+{
+  "message": "Toggle like successful",
+  "post": {
+    "_id": "60d5fc...",
+    "title": "Need advice on sleep",
+    "publicAuthorName": "Anonymous",
+    "authorDisplayMode": 1,
+    "likeCount": 1,
+    "likedBy": ["user123..."]
   }
 }
 ```
@@ -297,7 +349,61 @@
 }
 ```
 
-### 3.5 Delete Any Comment (Moderation)
+### 3.5 List All Posts (Admin)
+*   **Route:** `GET /api/admin/forums/posts?forumId=...&status=...&q=...&limit=...&cursor=...`
+*   **Query Params:** `forumId` (optional, filter by forum), `status` (optional, one of `active|hidden|deleted|under_review`), `q` (optional, full-text search), `limit` (default 20, max 100), `cursor` (optional, last item `_id` for pagination)
+*   **Response (200 OK):**
+```json
+{
+  "posts": [
+    {
+      "_id": "60d5fa...",
+      "forumId": "60d5ec...",
+      "authorId": "user123...",
+      "title": "Post title",
+      "content": "Body",
+      "tags": ["tag1"],
+      "publicAuthorName": "Anonymous",
+      "authorDisplayMode": 1,
+      "status": "active",
+      "likeCount": 3,
+      "commentCount": 1,
+      "createdAt": "2026-06-14T10:30:00.000Z",
+      "updatedAt": "2026-06-14T10:30:00.000Z"
+    }
+  ],
+  "nextCursor": "60d5fb...",
+  "hasNext": false
+}
+```
+
+### 3.6 Get Post Detail (Admin)
+*   **Route:** `GET /api/admin/forums/posts/:postId`
+*   **Auth:** Admin only. Returns full post and all comments (including deleted/hidden) with author IDs visible.
+*   **Response (200 OK):**
+```json
+{
+  "post": {
+    "_id": "60d5fa...",
+    "forumId": "60d5ec...",
+    "authorId": "user123...",
+    "title": "Post title",
+    "content": "Body",
+    "status": "active"
+  },
+  "comments": [
+    {
+      "_id": "60d5fb...",
+      "postId": "60d5fa...",
+      "authorId": "user456...",
+      "content": "Comment body",
+      "status": "active"
+    }
+  ]
+}
+```
+
+### 3.7 Delete Any Comment (Moderation)
 *   **Route:** `DELETE /api/admin/forums/comments/:commentId`
 *   **Response (200 OK):**
 ```json

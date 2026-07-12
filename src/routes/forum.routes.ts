@@ -1,19 +1,19 @@
 import { Router } from 'express';
-import { createComment, createPost, updatePost, deletePost, updateComment, deleteComment, getPostDetail, listForumPosts, listForums, searchPosts, listAllPosts } from '../controllers/forum.controller';
-import { requireAuth } from '../middlewares/auth.middleware';
+import { createComment, createPost, updatePost, deletePost, updateComment, deleteComment, getPostDetail, listForumPosts, listForums, searchPosts, toggleLike } from '../controllers/forum.controller';
+import { requireAuth, requireActiveUser } from '../middlewares/auth.middleware';
 
 const router = Router();
 
 router.get('/', listForums);
 router.get('/search', searchPosts);
-router.get('/posts', listAllPosts);
 router.get('/posts/:postId', getPostDetail);
-router.patch('/posts/:postId', requireAuth, updatePost);
-router.delete('/posts/:postId', requireAuth, deletePost);
-router.post('/:forumId/posts', requireAuth, createPost);
-router.patch('/comments/:commentId', requireAuth, updateComment);
-router.delete('/comments/:commentId', requireAuth, deleteComment);
-router.post('/posts/:postId/comments', requireAuth, createComment);
-router.get('/:forumId/posts', listForumPosts);
+router.patch('/posts/:postId', requireAuth, requireActiveUser, updatePost);
+router.delete('/posts/:postId', requireAuth, requireActiveUser, deletePost);
+router.post('/posts', requireAuth, requireActiveUser, createPost);
+router.post('/posts/:postId/like', requireAuth, requireActiveUser, toggleLike);
+router.patch('/comments/:commentId', requireAuth, requireActiveUser, updateComment);
+router.delete('/comments/:commentId', requireAuth, requireActiveUser, deleteComment);
+router.post('/posts/:postId/comments', requireAuth, requireActiveUser, createComment);
+router.get('/posts', listForumPosts);
 
 export default router;

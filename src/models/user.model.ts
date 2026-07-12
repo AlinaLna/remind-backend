@@ -28,6 +28,7 @@ const userSchema = new Schema(
     password: { type: String, select: false },
     refreshToken: { type: String, select: false },
     fullName: { type: String, trim: true },
+    googleId: { type: String, sparse: true, unique: true },
     role: { type: String, enum: ['student', 'expert', 'admin', 'system_manager'], required: true },
     status: { type: String, enum: ['active', 'pending', 'rejected', 'banned'], default: 'pending' },
     expert: { type: expertSchema, default: undefined },

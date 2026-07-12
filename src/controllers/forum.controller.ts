@@ -6,6 +6,7 @@ import ForumComment from '../models/forumComment.model';
 import User from '../models/user.model';
 import Log from '../models/log.model';
 import type { AuthorDisplayMode } from '../types/common';
+import { logDB } from '../utils/log';
 
 interface ForumParams {
   forumId: string;
@@ -20,6 +21,7 @@ interface CreatePostBody {
   content?: unknown;
   tags?: unknown;
   authorDisplayMode?: unknown;
+  forumId?: unknown;
 }
 
 interface CreateCommentBody {
@@ -59,28 +61,51 @@ const toSafeDocument = (doc: Record<string, unknown> | null | undefined): Record
   if (Object.prototype.hasOwnProperty.call(safePayload, 'authorId')) {
     delete safePayload.authorId;
   }
+  if (Object.prototype.hasOwnProperty.call(safePayload, 'likedBy')) {
+    delete safePayload.likedBy;
+  }
   return safePayload;
 };
 
 export const listForums: RequestHandler = async (req, res) => {
   try {
-    const forums = await Forum.find({ isActive: true }).sort({ createdAt: -1 }).lean();
-    return res.status(200).json({ forums });
+    const limit = parseInt(req.query.limit as string) || 20;
+    const cursor = req.query.cursor as string;
+
+    const query: any = { isActive: true };
+
+    if (cursor && mongoose.Types.ObjectId.isValid(cursor)) {
+      query._id = { $lt: new mongoose.Types.ObjectId(cursor) };
+    }
+
+    const forums = await Forum.find(query)
+      .sort({ _id: -1 }) // Sắp xếp giảm dần để tin mới nhất lên đầu
+      .limit(limit + 1)
+      .lean();
+
+    const hasNext = forums.length > limit;
+    
+    const items = hasNext ? forums.slice(0, limit) : forums;
+    
+    const nextCursor = items.length > 0 ? items[items.length - 1]._id : null;
+
+    return res.status(200).json({ 
+      forums: items,
+      nextCursor,
+      hasNext
+    });
   } catch (err) {
     console.error('listForums error:', err);
     return res.status(500).json({ error: 'Failed to fetch forums' });
   }
 };
 
+
 export const createPost: RequestHandler = async (req, res) => {
-  const { forumId } = req.params as unknown as ForumParams;
-  const { title, content, tags, authorDisplayMode } = (req.body || {}) as CreatePostBody;
+  const { title, content, tags, authorDisplayMode, forumId } = (req.body || {}) as CreatePostBody;
   const displayMode = authorDisplayMode as AuthorDisplayMode;
   const userId = req.user && req.user.id;
 
-  if (!isValidObjectId(forumId)) {
-    return res.status(400).json({ error: 'Invalid forum id' });
-  }
   if (!isValidObjectId(userId)) {
     return res.status(401).json({ error: 'Invalid token' });
   }
@@ -92,6 +117,9 @@ export const createPost: RequestHandler = async (req, res) => {
   }
   if (![0, 1].includes(displayMode as number)) {
     return res.status(400).json({ error: 'Invalid author display mode' });
+  }
+  if (typeof forumId !== 'string' || !isValidObjectId(forumId)) {
+    return res.status(400).json({ error: 'Valid forum id is required' });
   }
 
   try {
@@ -120,8 +148,11 @@ export const createPost: RequestHandler = async (req, res) => {
       commentCount: 0,
     });
 
+    logDB.write('ForumPost', 'create', post._id.toString(), { title: post.title });
+
     return res.status(201).json({ post: toSafeDocument(await ForumPost.findById(post._id).lean()) });
-  } catch (err) {
+  } catch (err: any) {
+    logDB.error('ForumPost', 'create', err);
     console.error('createPost error:', err);
     return res.status(500).json({ error: 'Failed to create forum post' });
   }
@@ -170,8 +201,8 @@ export const updatePost: RequestHandler = async (req, res) => {
         return res.status(400).json({ error: 'Invalid author display mode' });
       }
       post.authorDisplayMode = authorDisplayMode as AuthorDisplayMode;
-      // Recalculate public name
-      post.publicAuthorName = buildPublicAuthorName(req.user as any, post.authorDisplayMode as AuthorDisplayMode);
+      const dbUser = await User.findById(userId).select('fullName').lean();
+      post.publicAuthorName = buildPublicAuthorName(dbUser, post.authorDisplayMode as AuthorDisplayMode);
     }
 
     await post.save();
@@ -194,7 +225,7 @@ export const updatePost: RequestHandler = async (req, res) => {
 
 export const createComment: RequestHandler = async (req, res) => {
   const { postId } = req.params as unknown as PostParams;
-  const { content, authorDisplayMode } = (req.body || {}) as CreateCommentBody;
+  const { content, authorDisplayMode, parentId } = (req.body || {}) as CreateCommentBody & { parentId?: string };
   const displayMode = authorDisplayMode as AuthorDisplayMode;
   const userId = req.user && req.user.id;
 
@@ -230,6 +261,7 @@ export const createComment: RequestHandler = async (req, res) => {
       content: content.trim(),
       status: 'active',
       likeCount: 0,
+      parentId: parentId && isValidObjectId(parentId) ? parentId : null,
     });
 
     await ForumPost.updateOne({ _id: postId }, { $inc: { commentCount: 1 } });
@@ -379,20 +411,43 @@ export const deleteComment: RequestHandler = async (req, res) => {
 };
 
 export const listForumPosts: RequestHandler = async (req, res) => {
-  const { forumId } = req.params as unknown as ForumParams;
-
-  if (!isValidObjectId(forumId)) {
-    return res.status(400).json({ error: 'Invalid forum id' });
-  }
-
   try {
-    const posts = await ForumPost.find({ forumId, status: 'active' })
-      .select('-authorId')
-      .sort({ createdAt: -1 })
+    const limit = parseInt(req.query.limit as string) || 10;
+    const cursor = req.query.cursor as string;
+    const forumId = req.query.forumId as string | undefined;
+
+    const query: any = { status: 'active' };
+
+    if (forumId !== undefined) {
+      if (!isValidObjectId(forumId)) {
+        return res.status(400).json({ error: 'Invalid forum id' });
+      }
+      query.forumId = new mongoose.Types.ObjectId(forumId);
+    }
+
+    if (cursor && mongoose.Types.ObjectId.isValid(cursor)) {
+      query._id = { $lt: new mongoose.Types.ObjectId(cursor) };
+    }
+
+    const posts = await ForumPost.find(query)
+      .select('-authorId -likedBy')
+      .sort({ _id: -1 })
+      .limit(limit + 1)
       .lean();
 
-    return res.status(200).json({ posts });
-  } catch (err) {
+    const hasNext = posts.length > limit;
+    const items = hasNext ? posts.slice(0, limit) : posts;
+    const nextCursor = items.length > 0 ? items[items.length - 1]._id : null;
+
+    logDB.read('ForumPost', query, items.length);
+
+    return res.status(200).json({
+      posts: items.map(toSafeDocument),
+      nextCursor,
+      hasNext
+    });
+  } catch (err: any) {
+    logDB.error('ForumPost', 'listForumPosts', err);
     console.error('listForumPosts error:', err);
     return res.status(500).json({ error: 'Failed to fetch forum posts' });
   }
@@ -406,7 +461,7 @@ export const getPostDetail: RequestHandler = async (req, res) => {
   }
 
   try {
-    const post = await ForumPost.findOne({ _id: postId, status: 'active' }).select('-authorId').lean();
+    const post = await ForumPost.findOne({ _id: postId, status: 'active' }).select('-authorId -likedBy').lean();
 
     if (!post) {
       return res.status(404).json({ error: 'Post not found' });
@@ -417,7 +472,7 @@ export const getPostDetail: RequestHandler = async (req, res) => {
       .sort({ createdAt: 1 })
       .lean();
 
-    return res.status(200).json({ post, comments });
+    return res.status(200).json({ post: toSafeDocument(post), comments: comments.map(toSafeDocument) });
   } catch (err) {
     console.error('getPostDetail error:', err);
     return res.status(500).json({ error: 'Failed to fetch post detail' });
@@ -442,8 +497,9 @@ export const searchPosts: RequestHandler = async (req, res) => {
 
     return res.status(200).json({
       posts: posts.map((post) => {
-        const { authorId, score, ...safePost } = post as Record<string, unknown> & {
+        const { authorId, likedBy, score, ...safePost } = post as Record<string, unknown> & {
           authorId?: unknown;
+          likedBy?: unknown;
           score?: unknown;
         };
         return safePost;
@@ -455,16 +511,44 @@ export const searchPosts: RequestHandler = async (req, res) => {
   }
 };
 
-export const listAllPosts: RequestHandler = async (req, res) => {
-  try {
-    const posts = await ForumPost.find({ status: 'active' })
-      .select('-authorId')
-      .sort({ createdAt: -1 })
-      .lean();
+export const toggleLike: RequestHandler = async (req, res) => {
+  const { postId } = req.params;
+  const userId = req.user?.id;
 
-    return res.status(200).json({ posts });
+  if (!isValidObjectId(postId as string)) {
+    return res.status(400).json({ error: 'Invalid post id' });
+  }
+  if (!isValidObjectId(userId)) {
+    return res.status(401).json({ error: 'Invalid token' });
+  }
+
+  try {
+    const post = await ForumPost.findById(postId);
+    if (!post) {
+      return res.status(404).json({ error: 'Post not found' });
+    }
+
+    const likedBy = (post.likedBy || []).map((id: any) => id.toString());
+    const index = likedBy.indexOf(userId);
+    const wasLiked = index !== -1;
+
+    if (wasLiked) {
+      likedBy.splice(index, 1);
+    } else {
+      likedBy.push(userId);
+    }
+
+    post.likedBy = likedBy;
+    post.likeCount = likedBy.length;
+    await post.save();
+
+    return res.status(200).json({
+      message: 'Toggle like successful',
+      liked: !wasLiked,
+      post: toSafeDocument(post.toObject())
+    });
   } catch (err) {
-    console.error('listAllPosts error:', err);
-    return res.status(500).json({ error: 'Failed to fetch all forum posts' });
+    console.error('toggleLike error:', err);
+    return res.status(500).json({ error: 'Failed to toggle like' });
   }
 };

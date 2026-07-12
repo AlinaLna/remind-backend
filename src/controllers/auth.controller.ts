@@ -16,6 +16,7 @@ interface RegisterBody {
 
 interface LoginBody {
   email?: unknown;
+  identifier?: unknown;
   password?: unknown;
 }
 
@@ -176,17 +177,26 @@ export const register: RequestHandler<{}, unknown, RegisterBody> = async (req, r
 
 export const login: RequestHandler<{}, unknown, LoginBody> = async (req, res) => {
   try {
-    const email = normalizeEmail(req.body.email);
+    const idField = req.body.identifier || req.body.email;
+    const identifier = isString(idField) ? idField.trim() : '';
     const password = isString(req.body.password) ? req.body.password : '';
 
-    if (!email || !password) {
-      return res.status(400).json({ error: 'Email and password are required' });
+    if (!identifier || !password) {
+      return res.status(400).json({ error: 'Email/Tên đăng nhập và mật khẩu là bắt buộc' });
     }
 
-    const user = await User.findOne({ email }).select('+password');
+    const isEmail = identifier.includes('@');
+
+    let user;
+    if (isEmail) {
+      user = await User.findOne({ email: identifier.toLowerCase() }).select('+password');
+    } else {
+      // Find by exact fullName if it's not an email
+      user = await User.findOne({ fullName: identifier }).select('+password');
+    }
 
     if (!user || !user.password) {
-      return res.status(401).json({ error: 'Invalid credentials' });
+      return res.status(401).json({ error: 'Thông tin đăng nhập không hợp lệ' });
     }
 
     if (user.status === 'banned' || user.status === 'rejected') {
@@ -195,7 +205,7 @@ export const login: RequestHandler<{}, unknown, LoginBody> = async (req, res) =>
 
     const isMatch = await bcrypt.compare(password, user.password);
     if (!isMatch) {
-      return res.status(401).json({ error: 'Invalid credentials' });
+      return res.status(401).json({ error: 'Thông tin đăng nhập không hợp lệ' });
     }
 
     const { accessToken, refreshToken } = await issueTokenPair(user);
@@ -241,6 +251,76 @@ export const refresh: RequestHandler<{}, unknown, RefreshBody> = async (req, res
   } catch (error) {
     console.error('Refresh error:', error);
     return res.status(401).json({ error: 'Invalid refresh token' });
+  }
+};
+
+interface GoogleLoginBody {
+  googleToken?: unknown;
+}
+
+interface GoogleUserInfo {
+  sub: string;
+  email: string;
+  name?: string;
+  picture?: string;
+}
+
+const getGoogleUserInfo = async (accessToken: string): Promise<GoogleUserInfo> => {
+  const response = await fetch('https://www.googleapis.com/oauth2/v3/userinfo', {
+    headers: { Authorization: `Bearer ${accessToken}` },
+  });
+  if (!response.ok) {
+    throw new Error('Invalid Google token');
+  }
+  const data = await response.json() as GoogleUserInfo;
+  if (!data.email) {
+    throw new Error('Google account has no email');
+  }
+  return data;
+};
+
+export const googleLogin: RequestHandler<{}, unknown, GoogleLoginBody> = async (req, res) => {
+  try {
+    const googleToken = isString(req.body.googleToken) ? req.body.googleToken : '';
+    if (!googleToken) {
+      return res.status(400).json({ error: 'Google token is required' });
+    }
+
+    const info = await getGoogleUserInfo(googleToken);
+
+    const email = info.email.toLowerCase();
+    const fullName = info.name?.trim() || email.split('@')[0];
+    const googleId = info.sub;
+
+    let user = await User.findOne({ email });
+    if (user) {
+      if (user.status === 'banned' || user.status === 'rejected') {
+        return res.status(403).json({ error: 'Account is blocked' });
+      }
+      if (!user.googleId) {
+        user = await User.findByIdAndUpdate(user._id, { googleId }, { new: true }) as typeof user;
+      }
+    } else {
+      user = await User.create({
+        email,
+        fullName,
+        googleId,
+        role: 'student',
+        status: 'active',
+      });
+    }
+
+    const { accessToken, refreshToken } = await issueTokenPair(user);
+    await storeRefreshToken(user._id, refreshToken);
+
+    return res.status(200).json({
+      user: buildSafeUserDto(user),
+      accessToken,
+      refreshToken,
+    });
+  } catch (error) {
+    console.error('Google login error:', error);
+    return res.status(401).json({ error: 'Invalid Google token' });
   }
 };
 

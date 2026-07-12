@@ -158,4 +158,117 @@ describe('Auth API', () => {
       expect(invalid.status).toBe(401);
     });
   });
+
+  describe('POST /api/auth/google', () => {
+    beforeEach(() => {
+      global.fetch = jest.fn().mockResolvedValue({ ok: true, json: () => Promise.resolve({}) });
+      process.env.GOOGLE_CLIENT_ID = 'test-client-id';
+    });
+
+    afterEach(() => {
+      delete (global as any).fetch;
+    });
+
+    it('creates a new user from Google token and returns tokens', async () => {
+      (global.fetch as jest.Mock).mockResolvedValue({
+        ok: true,
+        json: () => Promise.resolve({
+          sub: 'google-sub-123',
+          email: 'googleuser@example.com',
+          name: 'Google User',
+        }),
+      });
+
+      const res = await request(app)
+        .post('/api/auth/google')
+        .send({ googleToken: 'valid-google-token' });
+
+      expect(res.status).toBe(200);
+      expect(res.body.user).toMatchObject({
+        email: 'googleuser@example.com',
+        fullName: 'Google User',
+        role: 'student',
+        status: 'active',
+      });
+      expect(res.body.accessToken).toEqual(expect.any(String));
+      expect(res.body.refreshToken).toEqual(expect.any(String));
+
+      const stored = await User.findOne({ email: 'googleuser@example.com' });
+      expect(stored).not.toBeNull();
+      expect(stored?.googleId).toBe('google-sub-123');
+    });
+
+    it('logs in existing user by Google email and links googleId', async () => {
+      const user = await User.create({
+        email: 'existing@example.com',
+        fullName: 'Existing User',
+        role: 'student',
+        status: 'active',
+      });
+
+      (global.fetch as jest.Mock).mockResolvedValue({
+        ok: true,
+        json: () => Promise.resolve({
+          sub: 'google-sub-456',
+          email: 'existing@example.com',
+          name: 'Existing User',
+        }),
+      });
+
+      const res = await request(app)
+        .post('/api/auth/google')
+        .send({ googleToken: 'valid-google-token' });
+
+      expect(res.status).toBe(200);
+      expect(res.body.user).toMatchObject({
+        id: user._id.toString(),
+        email: 'existing@example.com',
+      });
+
+      const stored = await User.findById(user._id);
+      expect(stored?.googleId).toBe('google-sub-456');
+    });
+
+    it('rejects banned users', async () => {
+      await User.create({
+        email: 'bannedgoogle@example.com',
+        fullName: 'Banned Google',
+        role: 'student',
+        status: 'banned',
+      });
+
+      (global.fetch as jest.Mock).mockResolvedValue({
+        ok: true,
+        json: () => Promise.resolve({
+          sub: 'google-sub-789',
+          email: 'bannedgoogle@example.com',
+          name: 'Banned Google',
+        }),
+      });
+
+      const res = await request(app)
+        .post('/api/auth/google')
+        .send({ googleToken: 'valid-google-token' });
+
+      expect(res.status).toBe(403);
+    });
+
+    it('rejects missing token', async () => {
+      const res = await request(app)
+        .post('/api/auth/google')
+        .send({});
+
+      expect(res.status).toBe(400);
+    });
+
+    it('rejects invalid Google token', async () => {
+      (global.fetch as jest.Mock).mockResolvedValue({ ok: false });
+
+      const res = await request(app)
+        .post('/api/auth/google')
+        .send({ googleToken: 'bad-token' });
+
+      expect(res.status).toBe(401);
+    });
+  });
 });
