@@ -1,28 +1,3 @@
-<<<<<<< HEAD
-import { Request, Response } from 'express';
-import { generateAIResponse } from '../services/ai.service';
-
-export const chatWithAI = async (req: Request, res: Response): Promise<void> => {
-  try {
-    const { prompt, history } = req.body;
-
-    if (!prompt) {
-      res.status(400).json({ success: false, message: 'Prompt is required' });
-      return;
-    }
-
-    const aiResponse = await generateAIResponse(prompt, history);
-
-    res.status(200).json({
-      success: true,
-      data: {
-        response: aiResponse,
-      },
-    });
-  } catch (error: any) {
-    console.error('Error in chatWithAI:', error);
-    res.status(500).json({ success: false, message: error.message || 'Internal Server Error' });
-=======
 import { type RequestHandler } from 'express';
 
 interface ChatHistoryItem {
@@ -152,6 +127,5 @@ export const aiChat: RequestHandler = async (req, res) => {
     console.error('[AI CHAT STREAM] Exception occurred:', error);
     res.write(`data: ${JSON.stringify({ error: 'Internal Server Error' })}\n\n`);
     res.end();
->>>>>>> e0c2c457c166cc7aecb7e645d009dce52f469f70
   }
 };
