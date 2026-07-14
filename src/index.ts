@@ -14,6 +14,7 @@ import aiRoutes from './routes/ai.routes';
 import notificationRoutes from './routes/notification.routes';
 =======
 import paymentRoutes from './routes/payments.routes';
+import aiRoutes from './routes/ai.routes';
 import appointmentRoutes from './routes/appointment.routes';
 >>>>>>> main
 import { createSocketServer } from './socket';
@@ -47,6 +48,7 @@ app.use('/api/ai', aiRoutes);
 app.use('/api/notifications', notificationRoutes);
 =======
 app.use('/api/payments', paymentRoutes);
+app.use('/api/ai', aiRoutes);
 app.use('/api/appointments', appointmentRoutes);
 >>>>>>> main
 

@@ -38,6 +38,7 @@ Single entry point to navigate all documentation. For each doc: what it is, who 
 | `agents/domain.md` | How to consume CONTEXT.md, ADRs, and glossary | Agents | refs knowledge/CONTEXT.md, adr/ | Rarely — only when doc structure changes |
 | `agents/forum-api-knowledge.md` | Exact JSON request/response shapes per endpoint, auth rules | Agents, UI Gen | refs api/forum.md | Adding/modifying forum endpoints |
 | `agents/chat-api-knowledge.md` | Exact JSON request/response shapes per chat endpoint, socket events, auth rules | Agents, UI Gen | refs api/chat.md | Adding/modifying chat endpoints or socket events |
+| `agents/ai-api-knowledge.md` | Exact JSON request/response shapes per AI endpoint, SSE format, auth rules | Agents, UI Gen | refs api/ai.md | Adding/modifying AI endpoints |
 | `agents/issue-tracker.md` | Issue file conventions under `.scratch/` | Agents | refs agents/triage-labels.md | Changing issue file format |
 | `agents/triage-labels.md` | Label mapping table | Agents | refs agents/issue-tracker.md | Adding/changing triage labels |
 
@@ -48,6 +49,7 @@ Single entry point to navigate all documentation. For each doc: what it is, who 
 | `api/forum.md` | Route listing grouped by access level | Humans, Agents | refs agents/forum-api-knowledge.md for full payloads | Adding/modifying forum routes |
 | `api/auth.md` | Auth endpoint shapes — register, login, google, refresh, logout | All | refs adr/0002 | Adding/modifying auth endpoints |
 | `api/chat.md` | Chat REST + WebSocket route listing | All | refs agents/chat-api-knowledge.md | Adding/modifying chat routes |
+| `api/ai.md` | AI chat endpoint overview | All | refs agents/ai-api-knowledge.md | Adding/modifying AI routes |
 
 ## Update Rules
 
