@@ -105,6 +105,7 @@ export const listRooms: RequestHandler = async (req, res) => {
       'participants.status': 'active',
       status: 'active',
     })
+      .populate('participants.userId', 'fullName avatarUrl role')
       .sort({ updatedAt: -1 })
       .lean();
 
@@ -125,7 +126,9 @@ export const getRoom: RequestHandler = async (req, res) => {
     const room = await ChatRoom.findOne({
       _id: id,
       'participants.userId': new mongoose.Types.ObjectId(userId),
-    }).lean();
+    })
+      .populate('participants.userId', 'fullName avatarUrl role')
+      .lean();
 
     if (!room) return res.status(404).json({ error: 'Room not found' });
 
