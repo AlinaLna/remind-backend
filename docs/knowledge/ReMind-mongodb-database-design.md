@@ -272,7 +272,9 @@ Payment history only. Do not store card data.
   organizationId: ObjectId,
   subscriptionId: ObjectId,
   creditPackageId: ObjectId,
-  provider: String, // stripe | momo | vnpay | paypal | other
+  appointmentId: ObjectId, // ref: Appointment (set when kind === 'appointment')
+  kind: String, // credit_package | subscription_plan | appointment
+  provider: String, // stripe | momo | vnpay | paypal | other | payos
   providerPaymentId: String,
   amount: Number,
   currency: String,
@@ -281,6 +283,8 @@ Payment history only. Do not store card data.
   createdAt: Date
 }
 ```
+
+> Note: Appointment payments use `kind: 'appointment'`, `provider: 'vnpay'` (demo/sandbox only — no real money), and link back to the appointment via `appointmentId`. The PayOS provider continues to handle `credit_package` / `subscription_plan` kinds.
 
 ### trialClaims
 
@@ -298,6 +302,19 @@ Prevents trial abuse across many accounts.
 ```
 
 Use hashed fingerprints only. Never store real card numbers or raw device identifiers.
+
+### otps
+
+Stores OTP (One-Time Password) codes used for password recovery/reset password flows.
+
+```javascript
+{
+  _id: ObjectId,
+  email: String, // index: email: 1
+  otp: String,
+  expiresAt: Date // TTL index: expiresAt: 1, expireAfterSeconds: 0
+}
+```
 
 ### expertAvailability
 
@@ -320,18 +337,16 @@ Expert weekly schedule settings.
 
 ### expertSlots
 
-Concrete bookable slots generated from availability.
+Concrete bookable slots created by an expert to publish availability. A slot can only be booked once: `bookAppointment` atomically flips `available` → `booked`, and `cancelAppointment` reverts `booked` → `available`.
 
 ```javascript
 {
   _id: ObjectId,
-  expertId: ObjectId,
+  expertId: ObjectId, // ref: User (expert)
   startAt: Date,
   endAt: Date,
-  status: String, // available | locked | booked | cancelled | expired
-  appointmentId: ObjectId,
-  lockedByStudentId: ObjectId,
-  lockedUntil: Date,
+  price: Number, // VND per session
+  status: String, // available | booked | unavailable
   createdAt: Date,
   updatedAt: Date
 }
@@ -339,16 +354,18 @@ Concrete bookable slots generated from availability.
 
 ### appointments
 
-Consultation booking.
+Consultation booking. Booking flow: student selects an available slot → `POST /api/appointments/book` reserves the slot (`status: 'booked'` on the slot) and creates an appointment in `pending_payment` → student pays via VNPAY demo (`POST /api/payments/appointment`) → IPN marks the Payment `succeeded` and flips the appointment to `booked`. Cancellation (`POST /api/appointments/:id/cancel`) reverts the slot to `available`.
 
 ```javascript
 {
   _id: ObjectId,
   studentId: ObjectId,
   expertId: ObjectId,
-  slotId: ObjectId,
+  slotId: ObjectId, // ref: ExpertSlot
   subscriptionId: ObjectId,
-  status: String, // confirmed | in_progress | completed | cancelled | no_show | rescheduled
+  paymentId: ObjectId, // ref: Payment (set when paid via VNPAY demo)
+  amount: Number, // VND, copied from the slot price at booking time
+  status: String, // pending_payment | booked | confirmed | in_progress | completed | cancelled | no_show | rescheduled
   creditSource: String,
   creditType: String,
   creditStatus: String,
@@ -546,61 +563,6 @@ Community forum comment.
   content: String,
   status: String, // active | hidden | deleted | under_review
   likeCount: Number,
-  createdAt: Date,
-  updatedAt: Date
-}
-```
-
-### forumGroups
-
-Group discussion rooms.
-
-```javascript
-{
-  _id: ObjectId,
-  forumId: ObjectId,
-  title: String,
-  description: String,
-  createdBy: ObjectId,
-  status: String, // active | closed | archived
-  isPublic: Boolean,
-  maxParticipants: Number,
-  participantCount: Number,
-  createdAt: Date,
-  updatedAt: Date
-}
-```
-
-### forumGroupMembers
-
-Who joined which group discussions.
-
-```javascript
-{
-  _id: ObjectId,
-  groupId: ObjectId,
-  userId: ObjectId,
-  role: String, // member | moderator
-  joinedAt: Date,
-  lastReadAt: Date,
-  createdAt: Date,
-  updatedAt: Date
-}
-```
-
-### forumGroupMessages
-
-Messages in group discussions. Real-time updates via Change Streams.
-
-```javascript
-{
-  _id: ObjectId,
-  groupId: ObjectId,
-  senderId: ObjectId,
-  senderRole: String,
-  senderDisplayName: String,
-  content: String,
-  status: String, // active | hidden | deleted
   createdAt: Date,
   updatedAt: Date
 }
@@ -1080,37 +1042,6 @@ All API endpoints must implement proper authorization middleware:
 - Accessing other users' private data
 - Modifying roles without admin authorization
 
-## Real-time Forum Group Discussions
-
-Use MongoDB Change Streams with Socket.io:
-
-```javascript
-// Backend: Watch for new messages
-const changeStream = db.collection('forumGroupMessages').watch();
-changeStream.on('change', async (change) => {
-  if (change.operationType === 'insert') {
-    const message = change.fullDocument;
-    // Emit to all connected clients in this group
-    io.to(`group:${message.groupId}`).emit('newMessage', message);
-  }
-});
-
-// Client: Join group room
-socket.emit('joinGroup', { groupId, authToken });
-
-// Backend: Validate auth before allowing join
-socket.on('joinGroup', async ({ groupId, authToken }) => {
-  const user = verifyToken(authToken);
-  const membership = await db.collection('forumGroupMembers').findOne({
-    groupId: ObjectId(groupId),
-    userId: user._id
-  });
-  if (membership) {
-    socket.join(`group:${groupId}`);
-  }
-});
-```
-
 ## MongoDB Indexes
 
 ### Essential Indexes
@@ -1129,10 +1060,6 @@ db.forumPosts.createIndex({ forumId: 1, status: 1, createdAt: -1 });
 db.forumPosts.createIndex({ authorId: 1 });
 db.forumPosts.createIndex({ tags: 1 });
 db.forumPosts.createIndex({ title: "text", content: "text" }); // Full-text search
-
-// Forum groups
-db.forumGroupMessages.createIndex({ groupId: 1, createdAt: 1 });
-db.forumGroupMembers.createIndex({ groupId: 1, userId: 1 }, { unique: true });
 
 // Appointments
 db.appointments.createIndex({ studentId: 1, status: 1 });
@@ -1208,18 +1135,16 @@ Expert weekly schedule settings.
 
 ### expertSlots
 
-Concrete bookable slots generated from availability.
+Concrete bookable slots generated from availability. Experts manage their own slots via `POST /api/experts/:id/slots`, `GET /api/experts/:id/slots` (own), `GET /api/experts/:id/availability` (public available only), and `DELETE /api/experts/slots/:slotId`.
 
 ```javascript
 {
   _id: ObjectId,
-  expertId: ObjectId,
+  expertId: ObjectId, // ref: User
   startAt: Date,
   endAt: Date,
-  status: String, // available | locked | booked | cancelled | expired
-  appointmentId: ObjectId,
-  lockedByStudentId: ObjectId,
-  lockedUntil: Date,
+  price: Number, // VND per session
+  status: String, // available | booked | unavailable
   createdAt: Date,
   updatedAt: Date
 }
@@ -1227,16 +1152,18 @@ Concrete bookable slots generated from availability.
 
 ### appointments
 
-Consultation booking.
+Consultation booking. Booking flow: student selects an available slot → `POST /api/appointments/book` reserves the slot (`status: 'booked'` on the slot) and creates an appointment in `pending_payment` → student pays via VNPAY demo (`POST /api/payments/appointment`) → IPN marks the Payment `succeeded` and flips the appointment to `booked`. Cancellation (`POST /api/appointments/:id/cancel`) reverts the slot to `available`.
 
 ```javascript
 {
   _id: ObjectId,
   studentId: ObjectId,
   expertId: ObjectId,
-  slotId: ObjectId,
+  slotId: ObjectId, // ref: ExpertSlot
   subscriptionId: ObjectId,
-  status: String, // confirmed | in_progress | completed | cancelled | no_show | rescheduled
+  paymentId: ObjectId, // ref: Payment (set after successful payment)
+  amount: Number, // VND, copied from the slot price at booking time
+  status: String, // confirmed | in_progress | completed | cancelled | no_show | rescheduled | pending_payment | booked
   creditSource: String, // subscription | purchased_package | volunteer_free | organization
   creditType: String, // expert_session | free_expert_session
   creditStatus: String, // locked | used | released
