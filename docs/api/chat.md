@@ -16,8 +16,8 @@ This document outlines the API routes for the ReMind Chat features. For detailed
 | Method | Path | Description |
 |---|---|---|
 | POST | /api/chats | Create a chat room (type `direct` requires `appointmentId` + `participantId`) |
-| GET | /api/chats | List user's active chat rooms |
-| GET | /api/chats/:id | Get room detail |
+| GET | /api/chats | List user's active chat rooms (participants are populated with `fullName`, `avatarUrl`, `role`) |
+| GET | /api/chats/:id | Get room detail (participants are populated with `fullName`, `avatarUrl`, `role`) |
 | GET | /api/chats/:id/messages | Cursor-paginated message history (`?cursor=&limit=`) |
 | POST | /api/chats/:id/invite | Invite a user to a group chat |
 | PATCH | /api/chats/:id/leave | Leave a chat room |

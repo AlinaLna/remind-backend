@@ -95,13 +95,23 @@
       "createdBy": "66a444444444444444444444",
       "participants": [
         {
-          "userId": "66a444444444444444444444",
+          "userId": {
+            "_id": "66a444444444444444444444",
+            "fullName": "Nguyen Van A",
+            "avatarUrl": "https://example.com/avatar.png",
+            "role": "student"
+          },
           "role": "student",
           "status": "active",
           "joinedAt": "2026-06-29T09:00:00.000Z"
         },
         {
-          "userId": "66a111111111111111111111",
+          "userId": {
+            "_id": "66a111111111111111111111",
+            "fullName": "Expert B",
+            "avatarUrl": "https://example.com/avatar.png",
+            "role": "expert"
+          },
           "role": "expert",
           "status": "active",
           "joinedAt": "2026-06-29T09:00:00.000Z"
@@ -132,7 +142,12 @@
     "createdBy": "66a444444444444444444444",
     "participants": [
       {
-        "userId": "66a444444444444444444444",
+        "userId": {
+          "_id": "66a444444444444444444444",
+          "fullName": "Nguyen Van A",
+          "avatarUrl": "https://example.com/avatar.png",
+          "role": "student"
+        },
         "role": "student",
         "status": "active",
         "joinedAt": "2026-06-29T09:00:00.000Z"
@@ -378,4 +393,20 @@
   "code": "NOT_MEMBER",
   "message": "You are not a participant of this room"
 }
+```
+*   **Other possible error payloads (when sending messages on direct chats tied to appointments):**
+    *   If the appointment does not exist:
+        ```json
+        {
+          "code": "APPOINTMENT_NOT_FOUND",
+          "message": "Ca tư vấn không tồn tại"
+        }
+        ```
+    *   If the appointment is not paid and the scheduled start time has not been reached (unless cancelled):
+        ```json
+        {
+          "code": "CHAT_NOT_ALLOWED",
+          "message": "Chỉ cho phép nhắn tin khi ca tư vấn đã được thanh toán hoặc đến giờ hẹn."
+        }
+        ```
 ```
