@@ -11,7 +11,9 @@ import authRoutes from './routes/auth.routes';
 import chatRoutes from './routes/chat.routes';
 import paymentRoutes from './routes/payments.routes';
 import aiRoutes from './routes/ai.routes';
+import appointmentRoutes from './routes/appointment.routes';
 import { createSocketServer } from './socket';
+import { startBookingSweeper } from './utils/bookingSweeper';
 
 const app = express();
 const server = http.createServer(app);
@@ -38,6 +40,7 @@ app.use('/api/forums', forumRoutes);
 app.use('/api/chats', chatRoutes);
 app.use('/api/payments', paymentRoutes);
 app.use('/api/ai', aiRoutes);
+app.use('/api/appointments', appointmentRoutes);
 
 app.use((err: unknown, req: Request, res: Response, next: NextFunction) => {
   console.error(err);
@@ -45,6 +48,7 @@ app.use((err: unknown, req: Request, res: Response, next: NextFunction) => {
 });
 
 if (process.env.NODE_ENV !== 'test') {
+  startBookingSweeper();
   server.listen(PORT, () => {
     console.log(`Server is running on port ${PORT}`);
   });
