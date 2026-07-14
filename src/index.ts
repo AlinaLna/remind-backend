@@ -10,6 +10,7 @@ import expertRoutes from './routes/expert.routes';
 import authRoutes from './routes/auth.routes';
 import chatRoutes from './routes/chat.routes';
 import paymentRoutes from './routes/payments.routes';
+import aiRoutes from './routes/ai.routes';
 import { createSocketServer } from './socket';
 
 const app = express();
@@ -36,6 +37,7 @@ app.use('/api/experts', expertRoutes);
 app.use('/api/forums', forumRoutes);
 app.use('/api/chats', chatRoutes);
 app.use('/api/payments', paymentRoutes);
+app.use('/api/ai', aiRoutes);
 
 app.use((err: unknown, req: Request, res: Response, next: NextFunction) => {
   console.error(err);
