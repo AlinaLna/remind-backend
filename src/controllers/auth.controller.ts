@@ -78,18 +78,14 @@ const buildRefreshTokenPayload = (user: {
   ...(typeof user.fullName === 'string' && user.fullName.trim() ? { fullName: user.fullName.trim() } : {}),
 });
 
-const buildSafeUserDto = (user: {
-  _id: mongoose.Types.ObjectId;
-  email: string;
-  fullName?: string | null;
-  role: UserRole;
-  status: UserStatus;
-}) => ({
+const buildSafeUserDto = (user: any) => ({
   id: user._id.toString(),
   email: user.email,
   ...(typeof user.fullName === 'string' && user.fullName.trim() ? { fullName: user.fullName.trim() } : {}),
   role: user.role,
   status: user.status,
+  avatar: user.avatar || "",
+  isAnonymous: !!user.isAnonymous,
 });
 
 const issueTokenPair = async (user: {
@@ -309,8 +305,15 @@ export const googleLogin: RequestHandler<{}, unknown, GoogleLoginBody> = async (
       if (user.status === 'banned' || user.status === 'rejected') {
         return res.status(403).json({ error: 'Account is blocked' });
       }
+      const updateData: any = {};
       if (!user.googleId) {
-        user = await User.findByIdAndUpdate(user._id, { googleId }, { new: true }) as typeof user;
+        updateData.googleId = googleId;
+      }
+      if (!user.avatar && info.picture) {
+        updateData.avatar = info.picture;
+      }
+      if (Object.keys(updateData).length > 0) {
+        user = await User.findByIdAndUpdate(user._id, { $set: updateData }, { new: true }) as typeof user;
       }
     } else {
       user = await User.create({
@@ -319,6 +322,7 @@ export const googleLogin: RequestHandler<{}, unknown, GoogleLoginBody> = async (
         googleId,
         role: 'student',
         status: 'active',
+        avatar: info.picture || '',
       });
     }
 

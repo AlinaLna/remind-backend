@@ -31,6 +31,8 @@ const userSchema = new Schema(
     googleId: { type: String, sparse: true, unique: true },
     role: { type: String, enum: ['student', 'expert', 'admin', 'system_manager'], required: true },
     status: { type: String, enum: ['active', 'pending', 'rejected', 'banned'], default: 'pending' },
+    avatar: { type: String, default: "" },
+    isAnonymous: { type: Boolean, default: false },
     expert: { type: expertSchema, default: undefined },
   },
   { timestamps: true }

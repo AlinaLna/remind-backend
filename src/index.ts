@@ -13,6 +13,7 @@ import notificationRoutes from './routes/notification.routes';
 import paymentRoutes from './routes/payments.routes';
 import aiRoutes from './routes/ai.routes';
 import appointmentRoutes from './routes/appointment.routes';
+import userRoutes from './routes/user.routes';
 import { createSocketServer } from './socket';
 import { startBookingSweeper } from './utils/bookingSweeper';
 
@@ -43,6 +44,7 @@ app.use('/api/ai', aiRoutes);
 app.use('/api/notifications', notificationRoutes);
 app.use('/api/payments', paymentRoutes);
 app.use('/api/appointments', appointmentRoutes);
+app.use('/api/users', userRoutes);
 
 app.use((err: unknown, req: Request, res: Response, next: NextFunction) => {
   console.error(err);
