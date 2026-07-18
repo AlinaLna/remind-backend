@@ -2,7 +2,6 @@ import type { Socket } from 'socket.io';
 import mongoose from 'mongoose';
 import ChatRoom from '../../models/chatRoom.model';
 import ChatMessage from '../../models/chatMessage.model';
-import Appointment from '../../models/appointment.model';
 import type { SocketAuthData, ClientToServerEvents, ServerToClientEvents } from '../../types/chat.types';
 
 type ChatSocket = Socket<ClientToServerEvents, ServerToClientEvents, {}, SocketAuthData>;
@@ -58,26 +57,9 @@ export const registerChatHandlers = (socket: ChatSocket): void => {
         return;
       }
 
-      if (room.appointmentId) {
-        const appointment = await Appointment.findById(room.appointmentId).lean();
-        if (!appointment) {
-          socket.emit('chat:error', { code: 'APPOINTMENT_NOT_FOUND', message: 'Ca tư vấn không tồn tại' });
-          return;
-        }
-
-        const now = new Date();
-        const isPaid = ['confirmed', 'in_progress', 'completed'].includes(appointment.status);
-        const isTimeReached = now >= new Date(appointment.scheduledStartAt) && appointment.status !== 'cancelled';
-
-        if (!isPaid && !isTimeReached) {
-          socket.emit('chat:error', {
-            code: 'CHAT_NOT_ALLOWED',
-            message: 'Chỉ cho phép nhắn tin khi ca tư vấn đã được thanh toán hoặc đến giờ hẹn.'
-          });
-          return;
-        }
-      }
-
+      // Chat is decoupled from the appointment lifecycle. A participant in an
+      // active room can always message; pre-payment is blocked naturally because
+      // the room is only created after payment success (see appointmentChat.service).
       const msg = await ChatMessage.create({
         chatRoomId: new mongoose.Types.ObjectId(roomId),
         senderId: new mongoose.Types.ObjectId(socket.data.userId),
