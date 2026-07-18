@@ -189,13 +189,15 @@ userSchema.index({ role: 1, status: 1 });
 
 ### GridFS File Storage
 
-**Decision:** Use GridFS for storing expert credentials, avatars, and attachments
+**Decision:** Use GridFS for storing expert credentials (bucket `credentials`), avatars, and attachments
 
 **When to Use:**
 - Files larger than 16MB (BSON document limit)
 - Expert license/certification PDFs
 - User avatar images
 - Chat attachments
+
+Credential review files are only served through authenticated backend streams; do not model them as public links.
 
 **When NOT to Use:**
 - Small files < 16MB can be stored directly in documents as Buffer

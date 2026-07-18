@@ -21,4 +21,6 @@
 ### Authentication & Security
 - **JWT & Refresh Tokens**: The platform uses short-lived access tokens and long-lived refresh tokens stored in MongoDB. See [ADR 0002: Auth, Refresh Tokens, and Expert States](docs/adr/0002-auth-refresh-tokens-and-expert-states.md).
 - **Google Social Login**: Frontend uses `@react-oauth/google` (implicit flow). Backend verifies the access token via Google's userinfo API, then upserts user and issues JWT pair. See [`docs/api/auth.md`](docs/api/auth.md).
-- **Expert States**: Experts default to `pending` upon registration and require admin approval to become `active`. Pending experts can log in to complete their profile but cannot access paid features.
+- **Expert States**: Experts default to `pending` upon registration and require admin approval to become `active`. Pending experts can log in to complete their profile but cannot access paid features; approval/rejection also notifies the expert and updates status in realtime.
+- **Validated Expert**: An approved expert with `isValidatedExpert=true`. Only validated experts can publish booking slots.
+- **Expert Credential Files**: Credential uploads are stored in MongoDB GridFS bucket `credentials` and reviewed through authenticated admin downloads; no public file URL is exposed.

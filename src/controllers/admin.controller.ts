@@ -6,6 +6,8 @@ import Log from '../models/log.model';
 import Forum from '../models/forum.model';
 import ForumPost from '../models/forumPost.model';
 import ForumComment from '../models/forumComment.model';
+import { downloadFromGridFS } from '../services/gridfs.service';
+import Notification, { NotificationType } from '../models/notification.model';
 import type { ReportStatus } from '../types/common';
 
 const isValidObjectId = (id: string | undefined): boolean => {
@@ -25,6 +27,31 @@ const writeLog = async (
     await Log.create({ actorId, actorRole, action, targetType, targetId, metadata });
   } catch (err) {
     console.error('Failed to write admin log:', err);
+  }
+};
+
+// ponytail: notify the expert of the review outcome + push a realtime status update
+const notifyExpertReview = (
+  io: any,
+  expertId: string,
+  status: string,
+  type: 'EXPERT_APPROVED' | 'EXPERT_REJECTED',
+  content: string
+): void => {
+  // ponytail: type param narrowed to the two expert-review notification kinds
+  try {
+    Notification.create({
+      recipient: new mongoose.Types.ObjectId(expertId),
+      type: type === 'EXPERT_APPROVED' ? NotificationType.EXPERT_APPROVED : NotificationType.EXPERT_REJECTED,
+      content,
+      referenceId: new mongoose.Types.ObjectId(expertId),
+    }).catch((err) => console.error('Failed to create expert notification:', err));
+
+    if (io) {
+      io.emit('expert:status-updated', { expertId, status });
+    }
+  } catch (err) {
+    console.error('Failed to notify expert review:', err);
   }
 };
 
@@ -334,17 +361,25 @@ export const approveExpert: RequestHandler = async (req, res) => {
     const reviewedBy = adminId ? new mongoose.Types.ObjectId(adminId) : undefined;
 
     expert.status = 'active';
-    expert.expert = expert.expert || {};
-    expert.expert.approval = {
-      ...(expert.expert.approval || {}),
-      ...(reviewedBy ? { reviewedBy } : {}),
-      reviewedAt: new Date(),
-      rejectionReason: undefined,
-    };
+    expert.isValidatedExpert = true;
+    // ponytail: cast to satisfy mongoose DocumentArray typing; credentials stays as-is
+    const base = (expert.expert || { credentials: [] }) as NonNullable<typeof expert.expert>;
+    expert.expert = {
+      ...base,
+      approval: {
+        ...(base.approval || {}),
+        ...(reviewedBy ? { reviewedBy } : {}),
+        reviewedAt: new Date(),
+        rejectionReason: undefined,
+      },
+    } as NonNullable<typeof expert.expert>;
 
     await expert.save();
 
     await writeLog(reviewedBy || new mongoose.Types.ObjectId(), (req.user && req.user.role) || 'admin', 'expert.approve', 'user', new mongoose.Types.ObjectId(id));
+
+    const io = (req as any).app?.get('io');
+    notifyExpertReview(io, id, 'active', 'EXPERT_APPROVED', 'Hồ sơ chuyên gia của bạn đã được phê duyệt. Bạn có thể sử dụng đầy đủ tính năng chuyên gia.');
 
     return res.status(200).json({ message: `Expert ${id} approved.`, expertId: id });
   } catch (err) {
@@ -376,14 +411,17 @@ export const rejectExpert: RequestHandler = async (req, res) => {
     }
 
     expert.status = 'rejected';
-    expert.expert = expert.expert || {};
     const reviewedBy = adminId ? new mongoose.Types.ObjectId(adminId) : undefined;
-    expert.expert.approval = {
-      ...(expert.expert.approval || {}),
-      ...(reviewedBy ? { reviewedBy } : {}),
-      reviewedAt: new Date(),
-      rejectionReason: reason.trim(),
-    };
+    const base = (expert.expert || { credentials: [] }) as NonNullable<typeof expert.expert>;
+    expert.expert = {
+      ...base,
+      approval: {
+        ...(base.approval || {}),
+        ...(reviewedBy ? { reviewedBy } : {}),
+        reviewedAt: new Date(),
+        rejectionReason: reason.trim(),
+      },
+    } as NonNullable<typeof expert.expert>;
 
     await expert.save();
 
@@ -396,10 +434,35 @@ export const rejectExpert: RequestHandler = async (req, res) => {
       { reason: reason.trim() }
     );
 
+    const io = (req as any).app?.get('io');
+    notifyExpertReview(io, id, 'rejected', 'EXPERT_REJECTED', `Hồ sơ chuyên gia của bạn đã bị từ chối. Lý do: ${reason.trim()}`);
+
     return res.status(200).json({ message: `Expert ${id} rejected.`, expertId: id });
   } catch (err) {
     console.error('rejectExpert error:', err);
     return res.status(500).json({ error: 'Failed to reject expert' });
+  }
+};
+
+export const downloadExpertCredential: RequestHandler = async (req, res) => {
+  const { id, fileId: fileIdParam } = req.params as unknown as ExpertIdParams & { fileId: string };
+  if (!isValidObjectId(id) || !isValidObjectId(fileIdParam)) {
+    return res.status(400).json({ error: 'Invalid expert or file id' });
+  }
+  try {
+    const expert = await User.findById(id).select('expert.credentials').lean();
+    const cred = expert?.expert?.credentials?.find(
+      (c) => c.fileId && c.fileId.toString() === fileIdParam
+    );
+    if (!cred || !cred.fileId) {
+      return res.status(404).json({ error: 'Credential file not found' });
+    }
+    const fileId = new mongoose.Types.ObjectId(cred.fileId);
+    res.set('Content-Disposition', `inline; filename="${cred.fileName || 'credential'}"`);
+    downloadFromGridFS(fileId).pipe(res);
+  } catch (err) {
+    console.error('downloadExpertCredential error:', err);
+    return res.status(500).json({ error: 'Failed to download credential' });
   }
 };
 

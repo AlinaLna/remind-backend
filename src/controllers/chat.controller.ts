@@ -109,8 +109,21 @@ export const listRooms: RequestHandler = async (req, res) => {
       .sort({ updatedAt: -1 })
       .lean();
 
-    logDB.read('ChatRoom', { userId }, rooms.length);
-    return res.status(200).json({ rooms });
+    const userObjId = new mongoose.Types.ObjectId(userId);
+    const roomsWithUnread = await Promise.all(
+      rooms.map(async (room) => {
+        const unreadCount = await ChatMessage.countDocuments({
+          chatRoomId: room._id,
+          senderId: { $ne: userObjId },
+          readBy: { $nin: [userObjId] },
+          status: 'active',
+        });
+        return { ...room, unreadCount };
+      })
+    );
+
+    logDB.read('ChatRoom', { userId }, roomsWithUnread.length);
+    return res.status(200).json({ rooms: roomsWithUnread });
   } catch (err) {
     console.error('listRooms error:', err);
     return res.status(500).json({ error: 'Failed to list chat rooms' });

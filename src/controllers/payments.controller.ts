@@ -10,6 +10,7 @@ import SubscriptionPlan from '../models/subscriptionPlan.model';
 import StudentCreditWallet from '../models/studentCreditWallet.model';
 import CreditTransaction from '../models/creditTransaction.model';
 import StudentSubscription from '../models/studentSubscription.model';
+import { ensureAppointmentChatRoom } from '../services/appointmentChat.service';
 
 const generateOrderCode = (): number => {
   const ts = String(Date.now());
@@ -345,6 +346,8 @@ export const createAppointmentPayment: RequestHandler<{}, unknown, CreateAppoint
       { $set: { status: 'booked', paymentId: payment._id } }
     );
 
+    await ensureAppointmentChatRoom(appt._id, appt.studentId, appt.expertId, req.app.get('io'));
+
     return res.status(201).json({
       paymentId: payment._id,
       orderCode,
@@ -377,10 +380,14 @@ export const vnpayIpn: RequestHandler = async (req, res) => {
 
     if (success) {
       await Payment.updateOne({ _id: payment._id }, { $set: { status: 'succeeded', paidAt: new Date() } });
-      await Appointment.findOneAndUpdate(
+      const appt = await Appointment.findOneAndUpdate(
         { _id: payment.appointmentId, status: 'pending_payment' },
-        { $set: { status: 'booked', paymentId: payment._id } }
-      );
+        { $set: { status: 'booked', paymentId: payment._id } },
+        { returnDocument: 'after' }
+      ).lean();
+      if (appt) {
+        await ensureAppointmentChatRoom(appt._id, appt.studentId, appt.expertId, req.app.get('io'));
+      }
       return res.status(200).json({ RspCode: '00', Message: 'Success' });
     }
 

@@ -1,6 +1,7 @@
 import { type Request, type Response } from 'express';
 import mongoose from 'mongoose';
-// Giả định các model này đã được tạo và export từ thư mục models
+import { uploadToGridFS } from '../services/gridfs.service';
+// Giả định các model này đã được tạo và export từ thư thư mục models
 import User from '../models/user.model';
 import Appointment from '../models/appointment.model';
 import ExpertSlot from '../models/expertSlot.model';
@@ -214,6 +215,12 @@ export const createExpertSlots = async (req: Request, res: Response) => {
     const id = req.params.id as string;
     if (id !== userId) return res.status(403).json({ error: 'Forbidden' });
 
+    // ponytail: only admin-verified experts may publish booking slots
+    const me = await User.findById(userId).select('isValidatedExpert').lean();
+    if (!me?.isValidatedExpert) {
+      return res.status(403).json({ error: 'Expert not validated. Upload credentials and wait for admin approval.' });
+    }
+
     const raw = req.body?.slots;
     const list: SlotInput[] = Array.isArray(raw) ? raw : [req.body];
     if (list.length === 0 || (list.length === 1 && !list[0])) {
@@ -242,6 +249,41 @@ export const createExpertSlots = async (req: Request, res: Response) => {
   } catch (error) {
     console.error('Lỗi khi tạo slot chuyên gia:', error);
     return res.status(500).json({ error: 'Failed to create slots' });
+  }
+};
+
+// ponytail: expert attaches credential file; appended to credentials array for admin review
+export const uploadCredential = async (req: Request, res: Response) => {
+  try {
+    const userId = req.user?.id;
+    if (!userId) return res.status(401).json({ error: 'Authentication required' });
+    if (!req.file) return res.status(400).json({ error: 'Credential file is required' });
+
+    const fileId = await uploadToGridFS(req.file.buffer, req.file.originalname);
+    const user = await User.findByIdAndUpdate(
+      userId,
+      { $push: { 'expert.credentials': { fileId, fileName: req.file.originalname, uploadedAt: new Date() } } },
+      { new: true }
+    ).select('expert.credentials isValidatedExpert');
+    if (!user) return res.status(404).json({ error: 'Expert not found' });
+
+    return res.status(200).json({ credentials: user.expert?.credentials });
+  } catch (error) {
+    console.error('uploadCredential error:', error);
+    return res.status(500).json({ error: 'Failed to upload credential' });
+  }
+};
+
+export const listCredentials = async (req: Request, res: Response) => {
+  try {
+    const userId = req.user?.id;
+    if (!userId) return res.status(401).json({ error: 'Authentication required' });
+    const user = await User.findById(userId).select('expert.credentials isValidatedExpert').lean();
+    if (!user) return res.status(404).json({ error: 'Expert not found' });
+    return res.status(200).json({ credentials: user.expert?.credentials ?? [] });
+  } catch (error) {
+    console.error('listCredentials error:', error);
+    return res.status(500).json({ error: 'Failed to fetch credentials' });
   }
 };
 

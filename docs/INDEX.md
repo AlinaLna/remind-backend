@@ -47,6 +47,7 @@ Single entry point to navigate all documentation. For each doc: what it is, who 
 | File | Purpose | Audience | Cross-refs | Update when |
 |------|---------|----------|------------|-------------|
 | `api/forum.md` | Route listing grouped by access level | Humans, Agents | refs agents/forum-api-knowledge.md for full payloads | Adding/modifying forum routes |
+| `api/experts.md` | Expert credential upload, admin credential review, slot gating | Humans, Agents | refs api/appointments.md, adr/0002 | Adding/modifying expert verification or slot-gating routes |
 | `api/auth.md` | Auth endpoint shapes — register, login, google, refresh, logout | All | refs adr/0002 | Adding/modifying auth endpoints |
 | `api/chat.md` | Chat REST + WebSocket route listing | All | refs agents/chat-api-knowledge.md | Adding/modifying chat routes |
 | `api/ai.md` | AI chat endpoint overview | All | refs agents/ai-api-knowledge.md | Adding/modifying AI routes |
@@ -66,6 +67,5 @@ Single entry point to navigate all documentation. For each doc: what it is, who 
 
 ## Known Gaps
 
-- No `api/experts.md` — expert routes only listed in `TECHNICAL_STACK.md` outline
 - `CONTEXT.md` referenced by `agents/domain.md` lives at `docs/knowledge/CONTEXT.md`, not root (root `CONTEXT.md` does not exist)
 - `.scratch/` directory exists but is empty — no issues/PRDs created yet

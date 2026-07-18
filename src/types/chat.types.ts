@@ -13,6 +13,8 @@ export interface ChatRoomParticipant {
 }
 
 export interface ServerToClientEvents {
+  'admin:new-expert': (data: { expertId: string; fullName: string; email: string }) => void;
+  'expert:status-updated': (data: { expertId: string; status: string }) => void;
   'chat:message': (msg: any) => void;
   'chat:typing': (data: { roomId: string; userId: string; isTyping: boolean }) => void;
   'chat:read': (data: { roomId: string; userId: string; messageIds: string[] }) => void;

@@ -1,6 +1,6 @@
 import { Router } from 'express';
 import { requireAuth, requireRole } from '../middlewares/auth.middleware';
-import { approveExpert, getPendingExperts, getReports, rejectExpert, resolveReport, createForum, updateForum, deleteForumPost, deleteForum, deleteForumComment, listForumPosts, getForumPost } from '../controllers/admin.controller';
+import { approveExpert, getPendingExperts, getReports, rejectExpert, resolveReport, createForum, updateForum, deleteForumPost, deleteForum, deleteForumComment, listForumPosts, getForumPost, downloadExpertCredential } from '../controllers/admin.controller';
 import {
   adminListCreditPackages,
   adminCreateCreditPackage,
@@ -32,6 +32,7 @@ router.delete('/forums/comments/:commentId', deleteForumComment);
 router.get('/experts/pending', getPendingExperts);
 router.post('/experts/:id/approve', approveExpert);
 router.post('/experts/:id/reject', rejectExpert);
+router.get('/experts/:id/credential/:fileId', downloadExpertCredential);
 
 router.get('/reports', getReports);
 router.post('/reports/:id/resolve', resolveReport);

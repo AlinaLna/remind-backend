@@ -13,6 +13,14 @@ const expertSchema = new Schema(
       issuedBy: { type: String },
       verificationStatus: { type: String },
     },
+    // ponytail: credential files stored in GridFS; array so experts can attach more over time
+    credentials: [
+      {
+        fileId: { type: Schema.Types.ObjectId },
+        fileName: { type: String },
+        uploadedAt: { type: Date, default: Date.now },
+      },
+    ],
     approval: {
       reviewedBy: { type: Schema.Types.ObjectId, ref: 'User' },
       reviewedAt: { type: Date },
@@ -33,6 +41,8 @@ const userSchema = new Schema(
     status: { type: String, enum: ['active', 'pending', 'rejected', 'banned'], default: 'pending' },
     avatar: { type: String, default: "" },
     isAnonymous: { type: Boolean, default: false },
+    // ponytail: gate for slot creation; flipped true only after admin verifies the credential file
+    isValidatedExpert: { type: Boolean, default: false },
     expert: { type: expertSchema, default: undefined },
   },
   { timestamps: true }

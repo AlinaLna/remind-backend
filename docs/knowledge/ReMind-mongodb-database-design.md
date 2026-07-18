@@ -66,6 +66,7 @@ Stores every login account.
   phone: String,
   role: String, // student | expert | manager | admin | system_manager
   status: String, // active | pending | rejected | banned
+  isValidatedExpert: Boolean, // default false; true after admin approval and required for slot publishing
   activeSubscriptionId: ObjectId,
   paymentCustomerId: String,
   defaultPaymentMethodId: String,
@@ -99,6 +100,10 @@ Stores every login account.
       yearsOfExperience: Number,
       languages: [String],
       consultationMethods: [String]
+    },
+    credentials: {
+      fileId: ObjectId,
+      fileName: String
     },
     specialties: [String],
     education: [
@@ -830,6 +835,8 @@ User notifications.
 
 Metadata for uploaded files (stored in GridFS or external storage).
 
+Expert credential uploads use the dedicated GridFS bucket `credentials`; admin review streams them through authenticated API endpoints instead of public URLs.
+
 ```javascript
 {
   _id: ObjectId,
@@ -861,7 +868,7 @@ Metadata for uploaded files (stored in GridFS or external storage).
 }
 ```
 
-Sensitive files are served by backend-generated signed URLs or through authenticated API endpoints.
+Sensitive files are served through authenticated API endpoints; short-lived signed URLs can be added later if needed.
 
 ### logs
 

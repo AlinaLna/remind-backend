@@ -1,10 +1,13 @@
 import mongoose, { Schema, Document } from 'mongoose';
 
 export enum NotificationType {
+  NEW_EXPERT = 'NEW_EXPERT',
   LIKE_POST = 'LIKE_POST',
   COMMENT_POST = 'COMMENT_POST',
   REPLY_COMMENT = 'REPLY_COMMENT',
   POST_APPROVED = 'POST_APPROVED',
+  EXPERT_APPROVED = 'EXPERT_APPROVED',
+  EXPERT_REJECTED = 'EXPERT_REJECTED',
   SYSTEM = 'SYSTEM',
 }
 

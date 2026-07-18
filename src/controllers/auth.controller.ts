@@ -5,6 +5,7 @@ import { createHash } from 'crypto';
 import jwt from 'jsonwebtoken';
 import mongoose from 'mongoose';
 import User from '../models/user.model';
+import Notification from '../models/notification.model';
 import type { AuthTokenPayload, UserRole, UserStatus } from '../types/common';
 import Otp from '../models/otp.model';
 import { sendMail } from '../utils/email.service';
@@ -164,6 +165,36 @@ export const register: RequestHandler<{}, unknown, RegisterBody> = async (req, r
       role,
       status,
     });
+
+    if (role === 'expert') {
+      const io = req.app.get('io');
+      try {
+        io.emit('admin:new-expert', {
+          expertId: user._id.toString(),
+          fullName: user.fullName,
+          email: user.email,
+        });
+      } catch (error) {
+        console.error('Failed to emit new expert notification:', error);
+      }
+
+      void (async () => {
+        try {
+          const admins = await User.find({ role: 'admin' }).select('_id');
+          await Notification.insertMany(
+            admins.map((admin) => ({
+              recipient: admin._id,
+              type: 'NEW_EXPERT',
+              content: `Chuyên gia mới đăng ký: ${user.fullName}`,
+              referenceId: user._id,
+              isRead: false,
+            }))
+          );
+        } catch (error) {
+          console.error('Failed to create new expert notifications:', error);
+        }
+      })();
+    }
 
     const { accessToken, refreshToken } = await issueTokenPair(user);
     await storeRefreshToken(user._id, refreshToken);

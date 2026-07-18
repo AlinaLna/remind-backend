@@ -4,7 +4,7 @@ Base path: `/api/appointments` and `/api/experts` and `/api/payments`
 
 Booking flow (VNPAY demo / sandbox — no real money):
 
-1. Expert creates slots → `POST /api/experts/:id/slots`
+1. Validated expert creates slots → `POST /api/experts/:id/slots` (returns 403 until `isValidatedExpert=true`)
 2. Student books an available slot → `POST /api/appointments/book` (reserves slot, creates appointment in `pending_payment`)
 3. Student pays → `POST /api/payments/appointment` (returns a VNPAY checkout URL)
 4. VNPAY IPN marks the Payment `succeeded` and flips the appointment to `booked`
@@ -71,7 +71,7 @@ Cancel an appointment owned by the caller (student or expert). Reverts the slot 
 
 ## POST /api/experts/:id/slots
 
-Create one or many availability slots. `expertId` is forced to the authenticated expert (client-supplied values ignored).
+Create one or many availability slots. `expertId` is forced to the authenticated expert (client-supplied values ignored). This endpoint returns `403` unless the expert has been admin-validated (`isValidatedExpert=true`).
 
 **Auth:** expert (must be the owner of `:id`).
 

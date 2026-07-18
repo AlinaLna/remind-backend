@@ -1,4 +1,5 @@
 import { Router } from 'express';
+import multer from 'multer';
 import { requireAuth, requireRole } from '../middlewares/auth.middleware';
 import {
   getExpertDashboard,
@@ -9,7 +10,11 @@ import {
   listAvailableSlots,
   deleteExpertSlot,
   listPublicExperts,
+  uploadCredential,
+  listCredentials,
 } from '../controllers/expert.controller';
+
+const upload = multer({ storage: multer.memoryStorage() });
 
 const router = Router();
 
@@ -27,5 +32,8 @@ router.put('/me/settings', updateExpertSettings);
 router.post('/:id/slots', createExpertSlots);
 router.get('/:id/slots', listOwnSlots);
 router.delete('/slots/:slotId', deleteExpertSlot);
+
+router.post('/me/credentials', upload.single('file'), uploadCredential);
+router.get('/me/credentials', listCredentials);
 
 export default router;

@@ -100,6 +100,7 @@ describe('Admin API security & behavior', () => {
       expect(updated).not.toBeNull();
       const updatedUser = updated!;
       expect(updatedUser.status).toBe('active');
+      expect(updatedUser.isValidatedExpert).toBe(true);
       expect(updatedUser.expert!.approval!.reviewedBy!.toString()).toBe(adminId);
       expect(updatedUser.expert!.approval!.reviewedAt).toBeInstanceOf(Date);
 

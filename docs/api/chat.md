@@ -45,3 +45,4 @@ This document outlines the API routes for the ReMind Chat features. For detailed
 | `chat:typing` | `{ roomId, userId, isTyping }` | Typing status |
 | `chat:read` | `{ roomId, userId, messageIds[] }` | Read receipts |
 | `chat:error` | `{ code, message }` | Error feedback |
+| `expert:status-updated` | `{ expertId, status }` | Broadcast expert approval/rejection status to the signed-in expert |
